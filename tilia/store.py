@@ -46,7 +46,9 @@ class Assignment:
     notes: str | None
 
 
-def _now() -> datetime:
+def local_now() -> datetime:
+    """The one clock: aware local time. Rows are stamped with it and forget("day") reads
+    "today" in the same local zone, so the two always agree on which day a row belongs to."""
     return datetime.now().astimezone()
 
 
@@ -55,7 +57,8 @@ def _day(iso: str):
 
 
 class Store:
-    def __init__(self, path):
+    def __init__(self, path, clock=local_now):
+        self._clock = clock
         self._conn = sqlite3.connect(str(path))
         self._depth = 0  # >0 inside atomic(): writes wait for its single commit
         self._conn.row_factory = sqlite3.Row
@@ -100,7 +103,7 @@ class Store:
     # turns
     def add_turn(self, role, text, state="ok"):
         self._x("INSERT INTO turns(at,role,text,state) VALUES (?,?,?,?)",
-                (_now().isoformat(), role, text, state))
+                (self._clock().isoformat(), role, text, state))
 
     def recent_turns(self, n) -> list[Turn]:
         rows = self._conn.execute(
@@ -109,7 +112,7 @@ class Store:
 
     # pending
     def add_pending(self, text):
-        self._x("INSERT INTO pending(at,text) VALUES (?,?)", (_now().isoformat(), text))
+        self._x("INSERT INTO pending(at,text) VALUES (?,?)", (self._clock().isoformat(), text))
 
     def peek_pending(self) -> list[tuple[int, str]]:
         """(id, text) oldest first, without removing anything."""
@@ -128,7 +131,7 @@ class Store:
     # assignments
     def add_assignment(self, kind, text, due) -> int:
         return self._x("INSERT INTO assignments(kind,text,created,due) VALUES (?,?,?,?)",
-                       (kind, text, _now().isoformat(), due)).lastrowid
+                       (kind, text, self._clock().isoformat(), due)).lastrowid
 
     @staticmethod
     def _asg(r):
@@ -154,7 +157,7 @@ class Store:
     # checkins
     def add_checkin(self, reason, text, sent):
         self._x("INSERT INTO checkins(at,reason,text,sent) VALUES (?,?,?,?)",
-                (_now().isoformat(), reason, text, 1 if sent else 0))
+                (self._clock().isoformat(), reason, text, 1 if sent else 0))
 
     def mark_last_checkin_replied(self):
         self._x("UPDATE checkins SET replied=1 WHERE id=(SELECT MAX(id) FROM checkins WHERE sent=1)")
@@ -224,13 +227,13 @@ class Store:
 
     # corrections, journal, meta
     def add_correction(self, text):
-        self._x("INSERT INTO corrections(at,text) VALUES (?,?)", (_now().isoformat(), text))
+        self._x("INSERT INTO corrections(at,text) VALUES (?,?)", (self._clock().isoformat(), text))
 
     def corrections(self) -> list[str]:
         return [r["text"] for r in self._conn.execute("SELECT text FROM corrections ORDER BY id")]
 
     def add_journal(self, text):
-        self._x("INSERT INTO journal(at,text) VALUES (?,?)", (_now().isoformat(), text))
+        self._x("INSERT INTO journal(at,text) VALUES (?,?)", (self._clock().isoformat(), text))
 
     def journal_entries(self) -> list[tuple[str, str]]:
         return [(r["at"], r["text"]) for r in

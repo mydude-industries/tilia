@@ -23,7 +23,10 @@ Everything Tilia keeps is in one folder on your Mac:
 One thing is outside that folder, and only during setup: `~/Tilia Import/`, the folder
 setup opens if you choose "Bring what your AI already knows". You save your AI's answer
 (a file called tilia-profile.md) there, or leave it in `~/Downloads`, where setup looks
-for that exact name and nowhere else; after you say yes to the import, the file is overwritten with zeros and deleted,
+for that exact name, saved after setup copied the question, and nowhere else. Setup only
+reads a plain file of yours (never a link), shows where macOS says it was downloaded from,
+and warns if that wasn't ChatGPT or Claude. After you say yes to the import, the same file
+you previewed is overwritten with zeros and deleted (if it changed since, it is left alone),
 and the folder is removed when it is empty. It is in your home folder, not Documents or
 Desktop, so it never syncs to iCloud. If you say no, the file stays where it is.
 

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -91,6 +92,10 @@ IMPORT_PROMPT = (
 DOWNLOAD_NAME = re.compile(r"tilia-profile( \(\d+\))?\.md", re.IGNORECASE)
 IMPORT_SUFFIXES = (".txt", ".md", ".rtf")
 IMPORT_PREVIEW_LINES = 8
+# where a download itself may come from: the chat sites, and OpenAI's file host that
+# ChatGPT's download links point at
+TRUSTED_HOSTS = ("chatgpt.com", "chat.openai.com", "claude.ai", "files.oaiusercontent.com")
+UNTRUSTED_ORIGIN = "This file didn't come from ChatGPT or Claude — only use it if you made it."
 IMPORT_AFTER = ("The answer may still be on your clipboard (copy something else to clear it), and "
                 "you may want to delete that chat in your AI's app.")
 
@@ -139,7 +144,8 @@ HELP = {
         "Setup copies a question to your clipboard. Paste it into your AI, then save its\n"
         "answer as a file called tilia-profile.md to download. Save it in the \"Tilia Import\"\n"
         "folder it opens (in your home folder, so it never syncs to iCloud), or just leave\n"
-        "it in Downloads: setup looks there only for that exact name, nowhere else.\n"
+        "it in Downloads: setup looks there only for that exact name, saved after the\n"
+        "question was copied, nowhere else.\n"
         "You see the first lines before anything is kept. After the import, the file is\n"
         "overwritten and deleted. Type skip at any prompt to leave this out."),
     "keep_running": (
@@ -169,23 +175,45 @@ def _load_done(state_path: Path) -> list[str]:
         return []
 
 
+def _load_state(state_path: Path) -> dict:
+    try:
+        data = json.loads(Path(state_path).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(state_path: Path, data: dict) -> None:
+    p = Path(state_path)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    tmp.replace(p)
+
+
+def _set_state(state_path: Path, key: str, value) -> None:
+    """Keep (or with None, drop) one extra value next to the done list."""
+    data = _load_state(state_path)
+    data["done"] = _load_done(state_path)
+    if value is None:
+        data.pop(key, None)
+    else:
+        data[key] = value
+    _save_state(state_path, data)
+
+
 def _mark_done(state_path: Path, step: str) -> None:
     done = _load_done(state_path)
     if step not in done:
         done.append(step)
-    done = [s for s in STEPS if s in done]
-    p = Path(state_path)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"done": done}), encoding="utf-8")
-    tmp.replace(p)
+    data = _load_state(state_path)
+    data["done"] = [s for s in STEPS if s in done]
+    _save_state(state_path, data)
 
 
 def _unmark(state_path: Path, step: str) -> None:
-    done = [s for s in _load_done(state_path) if s != step]
-    p = Path(state_path)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"done": done}), encoding="utf-8")
-    tmp.replace(p)
+    data = _load_state(state_path)
+    data["done"] = [s for s in _load_done(state_path) if s != step]
+    _save_state(state_path, data)
 
 
 # ---- the walkthrough -----------------------------------------------------------------
@@ -803,6 +831,12 @@ class Wizard:
             self._ask_t("Press Enter to copy the question and open the folder (or type skip): ")
             folder = self.io.import_dir()
             shown = "~/" + folder.name if folder.parent == Path.home() else str(folder)
+            # Downloads files only count if made after this moment. A resumed setup keeps the
+            # first copy's time, so a file saved before the interruption still counts.
+            copied_at = _load_state(self.state_path).get("import_copied_at")
+            if not isinstance(copied_at, (int, float)):
+                copied_at = self.io.wall_time()
+                _set_state(self.state_path, "import_copied_at", copied_at)
             if self.io.copy_clipboard(IMPORT_PROMPT):
                 self.ui.ok("Copied to your clipboard")
             else:
@@ -811,14 +845,18 @@ class Wizard:
             self.ui.say(f"Save the file in {shown} (that folder just opened), or leave it in Downloads.")
             while True:
                 self._ask_t("Press Enter when the file is saved (or type skip): ")
-                found = sorted(f for f in folder.iterdir()
-                               if f.is_file() and f.suffix.lower() in IMPORT_SUFFIXES)
+                found = self._plain_files(folder, lambda n: Path(n).suffix.lower() in IMPORT_SUFFIXES)
                 in_downloads = False
                 if not found:  # nothing in the Import folder: look for the one file we asked for
                     dl = self.io.downloads_dir()
-                    cands = sorted(f for f in dl.iterdir()
-                                   if f.is_file() and DOWNLOAD_NAME.fullmatch(f.name)
-                                   ) if dl.is_dir() else []
+                    cands = []
+                    for f, st in (self._plain_files(dl, DOWNLOAD_NAME.fullmatch)
+                                  if dl.is_dir() else []):
+                        if st.st_mtime < copied_at:
+                            self.ui.say(f"Ignored ~/Downloads/{f.name}: it's older than the "
+                                        "question you just copied.")
+                        else:
+                            cands.append((f, st))
                     if len(cands) > 1:
                         self.ui.fail(f"There are {len(cands)} tilia-profile files in Downloads, so "
                                      "keep just the one you want there (delete the others).")
@@ -829,20 +867,38 @@ class Wizard:
                     self.ui.fail(f"I need exactly one .txt, .md or .rtf file in {shown}, and "
                                  f"there {'are ' + str(len(found)) if found else 'is none'}.")
                     continue
-                f = found[0]
-                size = f.stat().st_size
-                if size > profile.MAX_IMPORT_BYTES:
+                f = found[0][0]
+                try:
+                    raw, ident = _read_plain(f)
+                except TooBig:
                     self.ui.fail("That file is over 100 KB, so trim it to the notes that matter.")
                     continue
-                text = (self.io.rtf_to_text(f) if f.suffix.lower() == ".rtf"
-                        else f.read_text(encoding="utf-8", errors="replace"))
+                except (NotPlainFile, OSError):
+                    self.ui.fail(f"{f.name} isn't a plain file of yours, so I can't use it.")
+                    continue
+                size = len(raw)
+                text = (self.io.rtf_to_text(raw) if f.suffix.lower() == ".rtf"
+                        else raw.decode("utf-8", errors="replace"))
                 if not text.strip():
                     self.ui.fail("That file is empty, so save the answer into it and try again.")
                     continue
-                self.ui.say(f"{f.name} ({_kb(size)}), the first lines:")
-                for line in text.strip().splitlines()[:IMPORT_PREVIEW_LINES]:
+                lines = _printable(text).split("\n")
+                while lines and not lines[-1].strip():
+                    lines.pop()
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+                shown_n = min(len(lines), IMPORT_PREVIEW_LINES)
+                self.ui.say(f"{f.name} ({_kb(size)}, {len(lines)} line{'s' * (len(lines) != 1)}), "
+                            f"the first {shown_n}:")
+                for line in lines[:IMPORT_PREVIEW_LINES]:
                     self.ui.say(f"  | {line[:74]}")
                 self.ui.say("")
+                host, via, trusted = _origin(self.io.where_from(f))
+                if host:
+                    self.ui.say(f"Downloaded from: {host}" + (f" via {via}" if via else ""))
+                    if not trusted:
+                        self.ui.fail(UNTRUSTED_ORIGIN)
+                    self.ui.say("")
                 if self.yes_no("Use this as your starting profile?", self._ask_t):
                     merged = bool(profile.read().strip())
                     try:
@@ -850,22 +906,44 @@ class Wizard:
                     except ValueError:
                         self.ui.fail("That file is over 100 KB, so trim it to the notes that matter.")
                         continue
-                    _wipe(f)
-                    try:
-                        folder.rmdir()  # only if nothing else is in it
-                    except OSError:
-                        pass
                     self.ui.ok("Added to Tilia's notes on you" if merged
                                else "Tilia's notes on you start from this")
-                    self.ui.ok("The file was overwritten and deleted"
-                               + (", and the folder removed" if not folder.exists() else ""))
+                    if _wipe(f, ident):
+                        try:
+                            folder.rmdir()  # only if nothing else is in it
+                        except OSError:
+                            pass
+                        self.ui.ok("The file was overwritten and deleted"
+                                   + (", and the folder removed" if not folder.exists() else ""))
+                    else:
+                        self.ui.fail(f"{f.name} changed after you saw it, so I left it alone. "
+                                     "Check it, then delete it yourself.")
                 else:
                     self.ui.say(f"Left alone: {'~/Downloads' if in_downloads else shown}/{f.name}")
                 self.ui.say(IMPORT_AFTER)
+                _set_state(self.state_path, "import_copied_at", None)
                 return True
         except Back:
+            _set_state(self.state_path, "import_copied_at", None)
             self.ui.ok("Skipped: Tilia starts from what you tell it")
             return True
+
+    def _plain_files(self, folder: Path, wanted) -> list[tuple[Path, os.stat_result]]:
+        """The wanted names in folder that are regular files (never followed links), each
+        with its lstat. Anything else with a wanted name gets a one-line note."""
+        out = []
+        for f in sorted(folder.iterdir()):
+            if not wanted(f.name):
+                continue
+            try:
+                st = os.lstat(f)
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                out.append((f, st))
+            else:
+                self.ui.say(f"{f.name} isn't a plain file, so it's ignored.")
+        return out
 
     # 6 ---------------------------------------------------------------------------------
     def keep_running(self) -> bool:
@@ -1037,10 +1115,23 @@ class RealIO:
     def open_folder(self, folder):
         return self._sp.run(["open", str(folder)], capture_output=True).returncode == 0
 
-    def rtf_to_text(self, path):
-        r = self._sp.run(["textutil", "-convert", "txt", "-stdout", str(path)],
-                         capture_output=True, text=True, timeout=30)
-        return r.stdout if r.returncode == 0 else ""
+    def rtf_to_text(self, data):
+        # the bytes already read and checked, never the path again
+        r = self._sp.run(["textutil", "-stdin", "-format", "rtf", "-convert", "txt", "-stdout"],
+                         input=data, capture_output=True, timeout=30)
+        return r.stdout.decode("utf-8", errors="replace") if r.returncode == 0 else ""
+
+    def wall_time(self):
+        return self._time.time()
+
+    def where_from(self, path):
+        """The raw "where from" record macOS keeps on downloads, or None."""
+        try:
+            r = self._sp.run(["xattr", "-px", "com.apple.metadata:kMDItemWhereFroms",
+                              str(path)], capture_output=True, text=True, timeout=10)
+            return bytes.fromhex("".join(r.stdout.split())) if r.returncode == 0 else None
+        except (OSError, ValueError, self._sp.TimeoutExpired):
+            return None
 
     def probe(self, name=None):
         """Run `python -m tilia probe-texts` as a one-shot launchd job, so Full Disk Access
@@ -1146,17 +1237,111 @@ def _kb(size: int) -> str:
     return f"{size} bytes" if size < 1024 else f"{size / 1024:.0f} KB"
 
 
-def _wipe(f: Path) -> None:
-    """Overwrite the file's bytes with zeros, then delete it."""
+class NotPlainFile(Exception):
+    """Not a regular file owned by this user (a link, a pipe, a folder, someone else's)."""
+
+
+class TooBig(Exception):
+    pass
+
+
+_NOFOLLOW = os.O_NOFOLLOW | os.O_NONBLOCK  # NONBLOCK: a pipe swapped in can't hang setup
+
+
+def _read_plain(f: Path) -> tuple[bytes, tuple[int, int]]:
+    """Read f through one descriptor that never follows a link, after checking that very
+    descriptor is a regular file of ours, at most 100 KB. Returns (bytes, (dev, inode))."""
+    fd = os.open(f, os.O_RDONLY | _NOFOLLOW)
     try:
-        size = f.stat().st_size
-        with open(f, "r+b") as fh:
-            fh.write(b"\0" * size)
-            fh.flush()
-            os.fsync(fh.fileno())
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            raise NotPlainFile(f.name)
+        if st.st_size > profile.MAX_IMPORT_BYTES:
+            raise TooBig(f.name)
+        chunks, left = [], profile.MAX_IMPORT_BYTES + 1
+        while left > 0:
+            b = os.read(fd, min(left, 65536))
+            if not b:
+                break
+            chunks.append(b)
+            left -= len(b)
+        data = b"".join(chunks)
+        if len(data) > profile.MAX_IMPORT_BYTES:
+            raise TooBig(f.name)
+        return data, (st.st_dev, st.st_ino)
+    finally:
+        os.close(fd)
+
+
+def _wipe(f: Path, ident: tuple[int, int]) -> bool:
+    """Overwrite the previewed file's bytes with zeros, then delete it. Only the file whose
+    (device, inode) is ident: if the name now points at anything else, refuse (False)."""
+    try:
+        fd = os.open(f, os.O_WRONLY | _NOFOLLOW)
     except OSError:
-        pass
+        return False
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != ident:
+            return False
+        try:
+            os.write(fd, b"\0" * st.st_size)
+            os.fsync(fd)
+        except OSError:
+            pass
+    finally:
+        os.close(fd)
+    try:
+        st = os.lstat(f)
+    except OSError:
+        return True
+    if (st.st_dev, st.st_ino) != ident:  # swapped while it was being zeroed
+        return False
     f.unlink(missing_ok=True)
+    return True
+
+
+_URL_HOST = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^/\\?#@]*@)?([^/\\?#:@\[\]]+)")
+_BIDI = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))}
+
+
+def _printable(text: str) -> str:
+    """Text safe to put on a terminal: no control or escape characters (bar newline and
+    tab) and no bidi overrides that could make a line read differently than it is."""
+    import unicodedata
+    return "".join(c for c in text if c in "\n\t" or (
+        unicodedata.category(c) != "Cc" and c not in _BIDI))
+
+
+def _host(u) -> str | None:
+    """The host of a URL, with blob: unwrapped to the origin that made it."""
+    if not isinstance(u, str):
+        return None
+    if u.startswith("blob:"):
+        u = u[5:]
+    m = _URL_HOST.match(u)  # parsed by hand: only net.py may import URL libraries
+    return _printable(m.group(1)).lower() if m else None
+
+
+def _origin(raw: bytes | None) -> tuple[str | None, str | None, bool]:
+    """From macOS's "where from" record (a binary plist: [download URL, referrer, ...]):
+    the download's host, the referrer's host when it differs, and whether the download
+    itself came from ChatGPT or Claude. Only the download URL decides trust; the referrer
+    is shown for information and never vouches for a file from elsewhere."""
+    import plistlib
+    if not raw:
+        return None, None, False
+    try:
+        urls = plistlib.loads(raw)
+    except Exception:
+        return None, None, False
+    if not isinstance(urls, list) or not urls:
+        return None, None, False
+    host = _host(urls[0])
+    via = _host(urls[1]) if len(urls) > 1 else None
+    if not host:
+        return None, None, False
+    return host, (via if via and via != host else None), host in TRUSTED_HOSTS
 
 
 def audit_prompt(privacy_text: str) -> str:

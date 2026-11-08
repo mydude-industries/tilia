@@ -87,11 +87,16 @@ class FakeIO:
         self.opened_folders: list = []
         self.rtf = kw.get("rtf", "From RTF\nline two")
         self.rtf_calls: list = []
+        self.wall = kw.get("wall", 0.0)  # wall-clock seconds when the question is copied
+        self.where_froms = kw.get("where_froms", {})  # file name -> [url, ...]
+        self.on_ask = kw.get("on_ask")  # (prompt) -> None, runs before an answer is given
 
     # terminal
     def input(self, prompt=""):
         self.prompts.append(prompt)
         self.out.append(prompt)
+        if self.on_ask:
+            self.on_ask(prompt)
         if not self.inputs:
             raise EOFError
         return self.inputs.pop(0)
@@ -219,9 +224,17 @@ class FakeIO:
         self.opened_folders.append(folder)
         return True
 
-    def rtf_to_text(self, path):
-        self.rtf_calls.append(path)
+    def rtf_to_text(self, data):
+        self.rtf_calls.append(data)
         return self.rtf
+
+    def wall_time(self):
+        return self.wall
+
+    def where_from(self, path):
+        import plistlib
+        urls = self.where_froms.get(Path(path).name)
+        return None if urls is None else plistlib.dumps(urls, fmt=plistlib.FMT_BINARY)
 
     def probe(self, name=None):
         """The launchd probe: can Tilia's Python read Messages, and which chats match."""

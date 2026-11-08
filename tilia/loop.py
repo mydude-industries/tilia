@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 
 from . import checkins, coach, commands, outbox, signals, texts
 from .claude import LimitError, MissingCLI, NotLoggedIn, UnsupportedCLI
+from .store import local_now
 
 TICK_S = 2
 QUIET = timedelta(seconds=20)            # batch window: answer after this much quiet
@@ -57,12 +58,8 @@ def log(msg: str) -> None:
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S} tilia: {msg}", file=sys.stderr, flush=True)
 
 
-def _real_now() -> datetime:
-    return datetime.now().astimezone()
-
-
 class Loop:
-    def __init__(self, cfg, store, tg, clock=_real_now, run=subprocess.run,
+    def __init__(self, cfg, store, tg, clock=local_now, run=subprocess.run,
                  chatdb_opener=lambda: None, power=None, ac=None):
         """chatdb_opener() returns an open chat.db connection, or None to let
         texts.ingest open the real one itself. power/ac: a power.Power and a

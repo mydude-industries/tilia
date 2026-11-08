@@ -178,6 +178,35 @@ def test_forget_day_removes_today_only(store):
     assert store.stats()["signals"] == 1
 
 
+def test_rows_are_stamped_by_the_store_clock_so_forget_day_agrees(home):
+    """Rows and forget("day") must read the same clock: a store stamping with the wall
+    clock while the caller's `now` is another day leaves 'today' undeleted."""
+    s = Store(paths.db_path(), clock=lambda: NOW)
+    s.add_turn("user", "a")
+    s.add_pending("p")
+    s.add_journal("j")
+    assert s.recent_turns(1)[0].at == NOW.isoformat()
+    s.forget("day", NOW)
+    assert s.stats()["turns"] == s.stats()["pending"] == s.stats()["journal"] == 0
+
+
+def test_forget_day_uses_local_calendar_day_across_midnight(home):
+    late = datetime(2026, 11, 7, 23, 30).astimezone()
+    s = Store(paths.db_path(), clock=lambda: late)
+    s.add_turn("user", "last night")
+    s.forget("day", late + timedelta(hours=1))  # 00:30 the next local day
+    assert s.stats()["turns"] == 1
+    s.forget("day", late)
+    assert s.stats()["turns"] == 0
+
+
+def test_store_clock_is_aware_local_time_by_default(store):
+    store.add_turn("user", "a")
+    at = datetime.fromisoformat(store.recent_turns(1)[0].at)
+    assert at.tzinfo is not None
+    assert at.utcoffset() == datetime.now().astimezone().utcoffset()
+
+
 def test_peek_and_delete_pending(store):
     store.add_pending("x")
     store.add_pending("y")

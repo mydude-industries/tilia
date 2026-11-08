@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tilia import checkins, paths, signals, store as store_mod
+from tilia import checkins, paths, signals
 from tilia.config import Config
 from tilia.store import Store
 
@@ -27,15 +27,13 @@ class Clock:
 
 
 @pytest.fixture
-def clock(monkeypatch):
-    c = Clock(NOW)
-    monkeypatch.setattr(store_mod, "_now", c)
-    return c
+def clock():
+    return Clock(NOW)
 
 
 @pytest.fixture
 def store(home, clock):
-    return Store(paths.db_path())
+    return Store(paths.db_path(), clock=clock)
 
 
 class FakeTG:

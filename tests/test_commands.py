@@ -27,7 +27,8 @@ class FakeTG:
 
 @pytest.fixture
 def store(home):
-    return Store(paths.db_path())
+    # rows are stamped by the same clock commands get as `now`, so "today" is one day
+    return Store(paths.db_path(), clock=lambda: NOW)
 
 
 @pytest.fixture
