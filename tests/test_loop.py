@@ -154,8 +154,8 @@ def test_batching_merges_three_rapid_messages(store, tg, clock, claude):
     for msg in ["ugh", "Riley went quiet again", "and I already texted twice"]:
         tg.text(msg)
         loop.tick()
-        clock.advance(5)
-    clock.advance(14)  # 19 s since the last message: still waiting
+        clock.advance(3)
+    clock.advance(4)  # 7 s since the last message: still waiting
     loop.tick()
     assert claude.coach_calls() == []
     clock.advance(2)
@@ -167,6 +167,20 @@ def test_batching_merges_three_rapid_messages(store, tg, clock, claude):
     assert tg.texts() == ["I'm here. Tell me more."]
     assert pending(store) == 0
     clock.advance(30)
+    loop.tick()
+    assert len(claude.coach_calls()) == 1
+
+
+def test_quiet_window_is_eight_seconds(store, tg, clock, claude):
+    from tilia import loop as loop_mod
+    assert loop_mod.QUIET == timedelta(seconds=8)
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("hey")
+    loop.tick()
+    clock.advance(7)
+    loop.tick()
+    assert claude.coach_calls() == []
+    clock.advance(1)
     loop.tick()
     assert len(claude.coach_calls()) == 1
 
@@ -736,24 +750,117 @@ def _typing_threads():
     return [t for t in threading.enumerate() if t.name == "tilia-typing" and t.is_alive()]
 
 
-def test_typing_sent_before_the_coach_runs_and_not_while_batching(store, tg, clock, claude):
+def test_typing_sent_on_the_tick_a_message_arrives(store, tg, clock, claude):
     loop = mkloop(store, tg, clock, claude)
-    order = []
-
-    def run(cmd, **kw):
-        order.append(tg.typings())
-        return claude(cmd, **kw)
-    loop.run = run
     tg.text("hey")
     loop.tick()
-    clock.advance(19)
+    assert tg.typings() == 1 and claude.coach_calls() == []  # well before QUIET
+    assert tg.events == ["typing"]
+
+
+def test_typing_only_ever_goes_to_the_paired_chat(store, clock, claude):
+    class Spy(FakeTG):
+        def __init__(self):
+            super().__init__()
+            self.typed_to = []
+
+        def typing(self, chat_id):
+            self.typed_to.append(chat_id)
+            return super().typing(chat_id)
+    tg = Spy()
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("who is this", chat_id=STRANGER)
     loop.tick()
-    assert tg.typings() == 0  # the 20 s batching window shows nothing
-    clock.advance(2)
+    assert tg.typed_to == []
+    tg.text("hey")
+    for _ in range(6):
+        loop.tick()
+        clock.advance(2)
+    assert tg.typed_to and set(tg.typed_to) == {PAIRED}
+
+
+def test_typing_repeats_every_four_seconds_while_batching(store, tg, clock, claude):
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("hey")
+    loop.tick()                       # t=0: typing
+    seen = [tg.typings()]
+    for _ in range(3):                # t=2, 4, 6 (the 2 s tick)
+        clock.advance(2)
+        loop.tick()
+        seen.append(tg.typings())
+    assert seen == [1, 1, 2, 2]       # again at 4 s, not at 2 s or 6 s
+    assert claude.coach_calls() == []
+
+
+def test_typing_continues_into_generation_without_a_duplicate_burst(store, tg, clock, claude):
+    from tilia.typing_indicator import Typing
+    firsts = []
+
+    def typing(t, c, first_after=0):
+        firsts.append(first_after)
+        return Typing(t, c, wait=lambda ev, s: ev.wait(10), first_after=first_after)
+    loop = Loop(Config(chat_id=PAIRED), store, tg, clock, claude, chatdb_opener=lambda: None,
+                typing=typing)
+    tg.text("hey")
+    loop.tick()                       # t=0 typing
+    clock.advance(4)
+    loop.tick()                       # t=4 typing
+    clock.advance(4)
+    loop.tick()                       # t=8: the tick sends typing, then the coach runs
+    assert len(claude.coach_calls()) == 1
+    # one typing per 4 s, no second ping as the coach starts
+    assert tg.events == ["typing", "typing", "typing", "send"]
+    assert firsts == [4]              # Typing waits a full interval before its own next one
+
+
+def test_generation_types_at_once_when_the_last_typing_is_stale(store, tg, clock, claude):
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("hey")
+    loop.tick()                       # t=0 typing
+    clock.advance(9)
+    loop.tick()                       # t=9: ≥4 s since the last; one typing, then reply
+    assert tg.events == ["typing", "typing", "send"]
+
+
+def test_typing_stops_after_the_reply(store, tg, clock, claude):
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("hey")
     loop.tick()
-    assert order and order[0] == 1
-    assert tg.events[-1] == "send" and tg.texts() == [claude.reply]
+    clock.advance(9)
+    loop.tick()
+    assert tg.texts() == [claude.reply]
+    n = tg.typings()
+    for _ in range(10):
+        clock.advance(2)
+        loop.tick()
+    assert tg.typings() == n
     assert _typing_threads() == []
+
+
+def test_no_typing_when_nothing_is_pending(store, tg, clock, claude):
+    loop = mkloop(store, tg, clock, claude)
+    for _ in range(5):
+        loop.tick()
+        clock.advance(4)
+    tg.text("/privacy")               # answered at once: no typing
+    loop.tick()
+    clock.advance(4)
+    loop.tick()
+    assert tg.typings() == 0 and len(tg.sent) == 1
+
+
+def test_no_typing_while_waiting_to_retry_a_failed_batch(store, tg, clock, claude):
+    claude.fail = "boom"
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("hey")
+    loop.tick()
+    clock.advance(9)
+    loop.tick()                       # fails; retry in 60 s
+    n = tg.typings()
+    for _ in range(10):
+        clock.advance(4)
+        loop.tick()
+    assert tg.typings() == n and pending(store) == 1
 
 
 def test_typing_repeats_while_a_slow_coach_runs(store, tg, clock, claude):
@@ -765,7 +872,7 @@ def test_typing_repeats_while_a_slow_coach_runs(store, tg, clock, claude):
         waits.append(seconds)
         return ev.wait(0.001)
     loop = Loop(Config(chat_id=PAIRED), store, tg, clock, claude, chatdb_opener=lambda: None,
-                typing=lambda t, c: Typing(t, c, wait=wait))
+                typing=lambda t, c, **kw: Typing(t, c, wait=wait, **kw))
 
     def slow(cmd, **kw):
         end = _t.monotonic() + 2
@@ -792,7 +899,7 @@ def test_typing_stops_after_a_failed_reply(store, tg, clock, claude):
     loop.tick()
     clock.advance(21)
     loop.tick()
-    assert tg.typings() == 1 and tg.texts() == []
+    assert tg.typings() == 2 and tg.texts() == []  # arrival + generation
     assert _typing_threads() == [] and pending(store) == 1
 
 

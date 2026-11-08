@@ -104,3 +104,13 @@ def test_telegram_typing_never_raises_or_leaks_the_token(capsys):
     assert t.typing(7) is False
     err = capsys.readouterr().err
     assert "typing" in err and "OSError" in err and TOKEN not in err
+
+
+def test_first_after_skips_the_entry_ping_and_waits_out_the_rest():
+    """Typing already shown 1 s ago: no burst on entry, the next one ~3 s later."""
+    tg, waits = TG(), []
+    with Typing(tg, 7, interval=4, wait=fast_wait(waits), first_after=3) as t:
+        assert tg.calls == []
+        assert until(lambda: len(tg.calls) >= 2)
+    assert waits[0] == 3 and set(waits[1:]) <= {4}
+    assert not t.thread.is_alive()

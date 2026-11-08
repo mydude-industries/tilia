@@ -17,10 +17,11 @@ from . import checkins, coach, commands, outbox, signals, texts
 from .claude import LimitError, MissingCLI, NotLoggedIn, UnsupportedCLI
 from .store import local_now
 from .telegram import split_reply
-from .typing_indicator import Typing, pause_for, ping
+from .typing_indicator import INTERVAL as TYPING_EVERY_S, Typing, pause_for, ping
 
 TICK_S = 2
-QUIET = timedelta(seconds=20)            # batch window: answer after this much quiet
+QUIET = timedelta(seconds=8)             # batch window: answer after this much quiet
+TYPING_EVERY = timedelta(seconds=TYPING_EVERY_S)  # "typing…" lasts ~5 s on Telegram
 INGEST_EVERY = timedelta(seconds=60)
 SLOW_EVERY = timedelta(minutes=15)       # daily signals pass + check-ins
 IDLE_SUMMARY = timedelta(minutes=30)
@@ -67,8 +68,8 @@ class Loop:
         """chatdb_opener() returns an open chat.db connection, or None to let
         texts.ingest open the real one itself. power/ac: a power.Power and a
         `() -> bool` on-AC probe; both optional (tests leave them out).
-        sleep: the pause between parts of a split reply. typing(tg, chat_id): the
-        context manager that shows "typing…" while the coach writes."""
+        sleep: the pause between parts of a split reply. typing(tg, chat_id, first_after=s):
+        the context manager that shows "typing…" while the coach writes."""
         self.cfg, self.store, self.tg, self.clock, self.run = cfg, store, tg, clock, run
         self.sleep, self.typing = sleep, typing
         self.chatdb_opener = chatdb_opener
@@ -80,6 +81,7 @@ class Loop:
         self.bg_at = None             # earliest background Claude work after a failure
         self.next_ingest = self.next_slow = self.next_power = self.next_outbox = None
         self.failures = 0
+        self.typed_at = None          # when "typing…" was last shown by the tick
 
     # ---- the tick --------------------------------------------------------------
 
@@ -88,6 +90,7 @@ class Loop:
             now = self.clock()
             self._safe("outbox", self._flush_outbox, now)
             self._safe("updates", self._poll, now)
+            self._safe("typing", self._keep_typing, now)
             self._safe("reply", self._answer, now)
             if self.next_ingest is None or now >= self.next_ingest:
                 self.next_ingest = now + INGEST_EVERY
@@ -176,6 +179,28 @@ class Loop:
     def _pending(self) -> int:
         return self.store.stats()["pending"]
 
+    def _keep_typing(self, now) -> None:
+        """Show "typing…" from the moment her words are queued until the reply is out:
+        every TYPING_EVERY while they wait in pending. Not while a failed batch waits to
+        be retried (she'd see typing for minutes), and only ever to the paired chat."""
+        if self.cfg.chat_id is None or not self._pending():
+            self.typed_at = None
+            return
+        if self.reply_at is not None and now < self.reply_at:
+            return
+        if self.typed_at is not None and now - self.typed_at < TYPING_EVERY:
+            return
+        self.typed_at = now
+        ping(self.tg, self.cfg.chat_id)
+
+    def _typing_first_after(self, now) -> float:
+        """Seconds until Typing should show its first indicator: the rest of the interval
+        if the tick just showed one, so generation carries on without a double ping."""
+        if self.typed_at is None:
+            return 0
+        left = (TYPING_EVERY - (now - self.typed_at)).total_seconds()
+        return left if left > 0 else 0
+
     def _answer(self, now) -> None:
         if not self._pending():
             return
@@ -196,7 +221,8 @@ class Loop:
             # and the words are still in pending; once committed, the reply is in the
             # outbox and a restart delivers it.
             with self.store.atomic():
-                with self.typing(self.tg, self.cfg.chat_id):
+                with self.typing(self.tg, self.cfg.chat_id,
+                                 first_after=self._typing_first_after(now)):
                     r = coach.respond(self.store, self.cfg, now, batch, run=self.run,
                                       mode=commands.current_mode(self.store))
                 self.store.delete_pending(rows[-1][0])
@@ -213,6 +239,7 @@ class Loop:
             return
         self.failures = 0
         self.reply_at = None
+        self.typed_at = None
         self.store.set_meta("notice", None)  # the episode is over
         self._touch(now)
         self._flush_now(now)
