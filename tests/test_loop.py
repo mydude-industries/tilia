@@ -35,6 +35,7 @@ class FakeTG:
         self.queue: list[Update] = []
         self.sent: list[tuple[int, str]] = []
         self.offsets = []
+        self.events: list[str] = []  # "typing" / "send", in order
         self._id = 1000
 
     def _push(self, chat_id, text, kind):
@@ -53,7 +54,15 @@ class FakeTG:
 
     def send(self, chat_id, text):
         self.sent.append((chat_id, text))
+        self.events.append("send")
         return True
+
+    def typing(self, chat_id):
+        self.events.append("typing")
+        return True
+
+    def typings(self):
+        return self.events.count("typing")
 
     def send_document(self, chat_id, filename, data):
         self.sent.append((chat_id, f"[doc {filename}]"))
@@ -718,3 +727,149 @@ def test_plist_umask_and_install_tighten_agent_log():
     i = main_src.index("os.umask(0o077)")
     around = main_src[i - 300:i + 50]
     assert "launchd" in around and "Umask" in around  # the comment says who makes agent.log
+
+
+# ---- typing… while Tilia writes ---------------------------------------------------
+
+def _typing_threads():
+    import threading
+    return [t for t in threading.enumerate() if t.name == "tilia-typing" and t.is_alive()]
+
+
+def test_typing_sent_before_the_coach_runs_and_not_while_batching(store, tg, clock, claude):
+    loop = mkloop(store, tg, clock, claude)
+    order = []
+
+    def run(cmd, **kw):
+        order.append(tg.typings())
+        return claude(cmd, **kw)
+    loop.run = run
+    tg.text("hey")
+    loop.tick()
+    clock.advance(19)
+    loop.tick()
+    assert tg.typings() == 0  # the 20 s batching window shows nothing
+    clock.advance(2)
+    loop.tick()
+    assert order and order[0] == 1
+    assert tg.events[-1] == "send" and tg.texts() == [claude.reply]
+    assert _typing_threads() == []
+
+
+def test_typing_repeats_while_a_slow_coach_runs(store, tg, clock, claude):
+    import time as _t
+    from tilia.typing_indicator import Typing
+    waits = []
+
+    def wait(ev, seconds):
+        waits.append(seconds)
+        return ev.wait(0.001)
+    loop = Loop(Config(chat_id=PAIRED), store, tg, clock, claude, chatdb_opener=lambda: None,
+                typing=lambda t, c: Typing(t, c, wait=wait))
+
+    def slow(cmd, **kw):
+        end = _t.monotonic() + 2
+        while tg.typings() < 3 and _t.monotonic() < end:
+            _t.sleep(0.001)
+        return claude(cmd, **kw)
+    loop.run = slow
+    tg.text("hey")
+    loop.tick()
+    clock.advance(21)
+    loop.tick()
+    assert tg.typings() >= 3 and set(waits) == {4}
+    assert tg.texts() == [claude.reply]
+    assert _typing_threads() == []
+    n = tg.typings()
+    _t.sleep(0.01)
+    assert tg.typings() == n
+
+
+def test_typing_stops_after_a_failed_reply(store, tg, clock, claude):
+    claude.fail = "boom"
+    loop = mkloop(store, tg, clock, claude)
+    tg.text("hey")
+    loop.tick()
+    clock.advance(21)
+    loop.tick()
+    assert tg.typings() == 1 and tg.texts() == []
+    assert _typing_threads() == [] and pending(store) == 1
+
+
+def test_typing_failure_never_breaks_replying(store, clock, claude):
+    class BrokenTyping(FakeTG):
+        def typing(self, chat_id):
+            raise OSError("no network for typing")
+    tg = BrokenTyping()
+    loop = mkloop(store, tg, clock, claude)
+    loop.sleep = lambda s: None
+    claude.reply = " ".join(f"Sentence number {i} is here." for i in range(400))
+    tg.text("hey")
+    loop.tick()
+    clock.advance(21)
+    loop.tick()
+    assert "".join(tg.texts()).replace(" ", "") == claude.reply.replace(" ", "")
+    assert len(tg.texts()) >= 2 and pending(store) == 0
+
+
+def test_no_typing_for_checkins(store, clock, monkeypatch):
+    from tilia import checkins, signals
+
+    def fake_send(store_, cfg, now, run=None):
+        from tilia import outbox
+        outbox.enqueue(store_, "How did the talk with Riley go?", now)
+        return True
+    monkeypatch.setattr(checkins, "maybe_send", fake_send)
+    monkeypatch.setattr(signals, "daily_pass", lambda *a, **k: None)
+    tg = FakeTG()
+    loop = mkloop(store, tg, clock, FakeClaude())
+    loop.tick()
+    assert tg.texts() == ["How did the talk with Riley go?"]
+    assert tg.typings() == 0
+
+
+def test_split_reply_types_and_pauses_between_parts(store, tg, clock, claude):
+    from tilia.telegram import split_reply
+    claude.reply = " ".join(f"Sentence number {i} is here." for i in range(400))
+    parts = split_reply(claude.reply)
+    assert len(parts) >= 2
+    loop = mkloop(store, tg, clock, claude)
+    pauses = []
+    loop.sleep = lambda s: (pauses.append(s), tg.events.append("pause"))
+    tg.text("hey")
+    loop.tick()
+    clock.advance(21)
+    loop.tick()
+    assert tg.texts() == parts
+    between = ["send"] + ["typing", "pause", "send"] * (len(parts) - 1)
+    assert tg.events[-len(between):] == between
+    assert len(pauses) == len(parts) - 1 and all(1.5 <= p <= 3 for p in pauses)
+
+
+def test_split_reply_sends_each_part_once_across_a_blip(store, clock, claude):
+    from tilia.telegram import split_reply
+
+    class FailSecond(FakeTG):
+        def __init__(self):
+            super().__init__()
+            self.n = 0
+
+        def send(self, chat_id, text):
+            self.n += 1
+            if self.n == 2:
+                return False
+            return super().send(chat_id, text)
+    tg = FailSecond()
+    claude.reply = " ".join(f"Sentence number {i} is here." for i in range(400))
+    parts = split_reply(claude.reply)
+    loop = mkloop(store, tg, clock, claude)
+    loop.sleep = lambda s: None
+    tg.text("hey")
+    loop.tick()
+    clock.advance(21)
+    loop.tick()
+    assert tg.texts() == parts[:1]
+    clock.advance(31)
+    loop.tick()
+    assert tg.texts() == parts  # part one went once; the rest followed in order
+    assert store.get_meta("outbox") is None

@@ -116,6 +116,16 @@ class Telegram:
             _log("send", e)
             return False
 
+    def typing(self, chat_id) -> bool:
+        """Show "typing…" in the chat for ~5 s. Never raises."""
+        try:
+            body = self._call("sendChatAction", {"chat_id": chat_id, "action": "typing"},
+                              timeout=5)
+            return bool(body.get("ok", True))
+        except Exception as e:
+            _log("typing", e)
+            return False
+
     def send_document(self, chat_id, filename: str, data: bytes) -> bool:
         try:
             body = net.post_multipart(

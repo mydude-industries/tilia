@@ -4,6 +4,7 @@ import subprocess
 from datetime import datetime, timedelta
 
 from . import assignments, coach, config, outbox, paths, profile
+from .typing_indicator import Typing
 
 DOC_LIMIT = 3500
 CAP_MAX = 4
@@ -107,20 +108,22 @@ def _awaited(kind, raw, text, store, cfg, now, tg, chat_id, run) -> bool:
     if kind == "practice":
         assignments.start_rehearsal(store, raw)
         # The answer also goes to the coach, so a real crisis in it is screened.
-        _coach_reply(store, cfg, now, [text], run, "rehearsal")
+        _coach_reply(store, cfg, now, [text], run, "rehearsal", tg, chat_id)
         return True
     if kind == "journal":
         store.add_journal(text)
-        _coach_reply(store, cfg, now, [text], run, "journal")
+        _coach_reply(store, cfg, now, [text], run, "journal", tg, chat_id)
         return True
     return False
 
 
-def _coach_reply(store, cfg, now, incoming, run, mode):
+def _coach_reply(store, cfg, now, incoming, run, mode, tg, chat_id):
     """A coach reply goes to the outbox in the same transaction as its turns, so a
-    Telegram blip (or dying mid-way) never loses it; the loop delivers it."""
+    Telegram blip (or dying mid-way) never loses it; the loop delivers it.
+    "typing…" shows while the coach writes."""
     with store.atomic():
-        r = coach.respond(store, cfg, now, incoming, run=run, mode=mode)
+        with Typing(tg, chat_id):
+            r = coach.respond(store, cfg, now, incoming, run=run, mode=mode)
         outbox.enqueue(store, r.reply, now)
     return r
 
@@ -176,7 +179,7 @@ def _done(args, store, cfg, now, tg, chat_id, run):
         _coach_reply(store, cfg, now, [
             "/done. The practice is over, so you're the coach again. Give me an honest "
             "debrief: what worked, what didn't, and one sentence to try in the real "
-            "conversation."], run, "chat")
+            "conversation."], run, "chat", tg, chat_id)
         assignments.finish_rehearsal(store, now)
 
 

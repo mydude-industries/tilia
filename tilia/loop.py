@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from . import checkins, coach, commands, outbox, signals, texts
 from .claude import LimitError, MissingCLI, NotLoggedIn, UnsupportedCLI
 from .store import local_now
+from .telegram import split_reply
+from .typing_indicator import Typing, pause_for, ping
 
 TICK_S = 2
 QUIET = timedelta(seconds=20)            # batch window: answer after this much quiet
@@ -60,11 +62,15 @@ def log(msg: str) -> None:
 
 class Loop:
     def __init__(self, cfg, store, tg, clock=local_now, run=subprocess.run,
-                 chatdb_opener=lambda: None, power=None, ac=None):
+                 chatdb_opener=lambda: None, power=None, ac=None, sleep=time.sleep,
+                 typing=Typing):
         """chatdb_opener() returns an open chat.db connection, or None to let
         texts.ingest open the real one itself. power/ac: a power.Power and a
-        `() -> bool` on-AC probe; both optional (tests leave them out)."""
+        `() -> bool` on-AC probe; both optional (tests leave them out).
+        sleep: the pause between parts of a split reply. typing(tg, chat_id): the
+        context manager that shows "typing…" while the coach writes."""
         self.cfg, self.store, self.tg, self.clock, self.run = cfg, store, tg, clock, run
+        self.sleep, self.typing = sleep, typing
         self.chatdb_opener = chatdb_opener
         self.power, self.ac = power, ac
         now = clock()
@@ -190,8 +196,9 @@ class Loop:
             # and the words are still in pending; once committed, the reply is in the
             # outbox and a restart delivers it.
             with self.store.atomic():
-                r = coach.respond(self.store, self.cfg, now, batch, run=self.run,
-                                  mode=commands.current_mode(self.store))
+                with self.typing(self.tg, self.cfg.chat_id):
+                    r = coach.respond(self.store, self.cfg, now, batch, run=self.run,
+                                      mode=commands.current_mode(self.store))
                 self.store.delete_pending(rows[-1][0])
                 self._enqueue(r.reply, now)
         except CLAUDE_ERRORS as e:
@@ -244,11 +251,30 @@ class Loop:
             item = box[0]
             if now - datetime.fromisoformat(item["since"]) > OUTBOX_GIVE_UP:
                 log("outbox: gave up on one reply")
-            elif not self.tg.send(self.cfg.chat_id, item["text"]):
+            elif not self._send_parts(box, item):
                 return
             box.pop(0)
             # saved after each send, so dying mid-flush never sends a reply twice
             self.store.set_meta("outbox", json.dumps(box) if box else None)
+
+    def _send_parts(self, box, item) -> bool:
+        """Send one outbox item part by part. What is left is saved after each part, so
+        a blip or a restart resumes at the next part and no part goes twice. Between
+        parts: "typing…" and a short pause, so they don't land all at once."""
+        parts = item.get("parts") or split_reply(item["text"])
+        while parts:
+            if not self.tg.send(self.cfg.chat_id, parts[0]):
+                return False
+            parts.pop(0)
+            if parts:
+                item["parts"] = parts
+                self.store.set_meta("outbox", json.dumps(box))
+                ping(self.tg, self.cfg.chat_id)
+                try:
+                    self.sleep(pause_for(parts[0]))
+                except Exception as e:
+                    log(f"pause failed: {type(e).__name__}")
+        return True
 
     def _touch(self, now) -> None:
         self.store.set_meta("last_activity", now.isoformat())

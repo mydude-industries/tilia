@@ -14,7 +14,7 @@ NOW = datetime(2026, 11, 7, 12, 0).astimezone()
 
 class FakeTG:
     def __init__(self):
-        self.sent, self.docs = [], []
+        self.sent, self.docs, self.typings = [], [], 0
 
     def send(self, chat_id, text):
         self.sent.append(text)
@@ -22,6 +22,10 @@ class FakeTG:
 
     def send_document(self, chat_id, filename, data):
         self.docs.append((filename, data))
+        return True
+
+    def typing(self, chat_id):
+        self.typings += 1
         return True
 
 
@@ -354,3 +358,36 @@ def test_privacy_shows_the_folder_without_the_username(tmp_path, monkeypatch, tg
     out = tg.sent[0]
     assert "in ~/Library/Application Support/Tilia\n" in out
     assert "jordan" not in out and str(tmp_path) not in out
+
+
+# ---- typing… while the coach writes ----------------------------------------------
+
+def test_journal_reflection_shows_typing_before_the_coach_runs(store, tg):
+    cfg = mkcfg()
+    h("/journal", store, cfg, tg, no_run)
+    assert tg.typings == 0
+    seen = []
+    inner = fake(reply("That sounds heavy."))
+
+    def run(cmd, **kw):
+        seen.append(tg.typings)
+        return inner(cmd, **kw)
+    assert h("rough day", store, cfg, tg, run)
+    assert seen and seen[0] >= 1
+    assert not [t for t in __import__("threading").enumerate() if t.name == "tilia-typing"]
+
+
+def test_done_debrief_shows_typing(store, tg):
+    cfg = mkcfg()
+    h("/practice", store, cfg, tg, no_run)
+    h("my boss, asking for a raise", store, cfg, tg, ROLE_RUN)
+    before = tg.typings
+    assert before >= 1
+    h("/done", store, cfg, tg, fake(reply("Good work.")))
+    assert tg.typings > before
+
+
+def test_plain_commands_show_no_typing(store, tg):
+    for c in ("/help", "/privacy", "/practice", "/journal", "/quieter", "/forget last"):
+        h(c, store, mkcfg(), tg, no_run)
+    assert tg.typings == 0
