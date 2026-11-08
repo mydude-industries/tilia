@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Refuse commits containing personal data. Installed by scripts/dev-setup.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+files=()
+while IFS= read -r f; do files+=("$root/$f"); done < <(git diff --cached --name-only --diff-filter=ACM)
+[ "${#files[@]}" -eq 0 ] && exit 0
+exec python3 "$root/scripts/check_no_personal_data.py" "${files[@]}"

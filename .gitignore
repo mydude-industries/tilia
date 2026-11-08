@@ -1,0 +1,25 @@
+# Personal data must never be committed
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+data/
+*.log
+profile*.md
+
+# Python / tooling
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.env
+.DS_Store
+dist/
+*.egg-info/
+
+# Local agent workspace
+.superpowers/

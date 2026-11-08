@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Filled in by scripts/install.sh. Placeholders: __PYTHON__ __REPO__ __DATA__ __PATH__ -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tilia.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>-m</string>
+        <string>tilia</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>Umask</key>
+    <integer>63</integer>
+    <key>StandardOutPath</key>
+    <string>__DATA__/agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>__DATA__/agent.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__PATH__</string>
+        <key>TILIA_HOME</key>
+        <string>__DATA__</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>TMPDIR</key>
+        <string>__DATA__/tmp</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+    </dict>
+</dict>
+</plist>

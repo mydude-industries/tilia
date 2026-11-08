@@ -1,0 +1,76 @@
+#!/bin/bash
+# Tilia update. Never automatic. Everything this script does, in order:
+#   1. Downloads the list of released versions (git fetch --tags). Nothing changes yet.
+#   2. Shows your version, the newest one, and which files changed.
+#   3. Prints the audit prompt from the PRIVACY.md you already have installed (never from
+#      the incoming version, which could reword it), so your own AI can check the new code.
+#   4. Only if you type yes: switches to the new version, updates Python parts,
+#      and restarts Tilia (scripts/install.sh). If any of that fails, it puts the
+#      old version back the same way.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+echo "  Checking for a new version..."
+if ! git fetch --tags --quiet 2>/dev/null; then
+  echo "  Couldn't reach GitHub, so this shows only versions already downloaded."
+fi
+
+latest="$(git tag --list --sort=-v:refname | sed -n 1p)"
+if [ -z "$latest" ]; then
+  echo "  There are no released versions yet, so there's nothing to update."
+  exit 0
+fi
+
+current="$(git describe --tags --exact-match 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)"
+if [ "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$latest")" ]; then
+  echo "  ✓ You're on the newest version, $latest."
+  exit 0
+fi
+if ! git merge-base --is-ancestor HEAD "$latest"; then
+  echo "  ✓ You're already on or past the newest release ($latest), so there's nothing to update."
+  exit 0
+fi
+
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "  ✗ Tilia's code has local edits, so update stops here to keep them safe." >&2
+  exit 1
+fi
+
+echo
+echo "  You have:  $current"
+echo "  Newest:    $latest"
+echo
+echo "  Files that change:"
+git --no-pager diff --stat HEAD "$latest"
+echo
+echo "  Want your own AI to check it first? Open Claude or ChatGPT in this folder, paste"
+echo "  the prompt below, and add: \"Check the version tagged $latest (git diff HEAD $latest).\""
+echo
+# The installed copy only. Falls back to the built-in prompt if it has none.
+{ git show HEAD:PRIVACY.md 2>/dev/null || true; } \
+  | uv run --quiet python -m tilia.setup_wizard audit-prompt | fold -s -w 76 | sed 's/^/    /'
+echo
+
+read -r -p "  Type yes to update to $latest (anything else stops): " answer
+if [ "$answer" != "yes" ]; then
+  echo "  Not updated. Nothing changed."
+  exit 0
+fi
+
+prev="$(git symbolic-ref --quiet --short HEAD || git rev-parse HEAD)"
+rollback() {
+  trap - ERR
+  set +e
+  git -c advice.detachedHead=false checkout --quiet "$prev"
+  uv sync --quiet
+  scripts/install.sh
+  echo "  ✗ The update didn't finish, so Tilia is back on $current." >&2
+  exit 1
+}
+trap rollback ERR
+git -c advice.detachedHead=false checkout --quiet "$latest"
+uv sync --quiet
+scripts/install.sh
+trap - ERR
+echo "  ✓ Updated to $latest."

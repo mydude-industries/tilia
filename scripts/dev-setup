@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# One-time setup: install the pre-commit privacy hook and dependencies.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+cp "$root/scripts/pre-commit" "$(git rev-parse --git-path hooks)/pre-commit"
+chmod +x "$(git rev-parse --git-path hooks)/pre-commit"
+cd "$root" && uv sync
+echo "Hook installed. Commits containing personal data will be refused."

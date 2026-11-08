@@ -1,0 +1,40 @@
+#!/bin/bash
+# Tilia setup. Everything this script does, in order:
+#   1. If `uv` (the tool that installs Python for this folder) is missing, it asks you,
+#      then installs it with uv's official installer from astral.sh.
+#   2. `uv sync`: Python 3.12 and Tilia's one dependency, inside this folder's .venv.
+#   3. Installs the git hook that refuses commits containing personal data.
+#   4. Starts the guided walkthrough (tilia/setup_wizard.py). Run ./setup again to resume.
+#      ./setup texts | style | model | bot | all  re-runs part of it after it's finished.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# uv's installer puts it here; it may not be on PATH in this window yet.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo
+  echo "  Tilia needs uv, a small free tool that installs Python just for this folder."
+  echo "  It comes from astral.sh, the people who make it. Nothing else on your Mac changes."
+  echo
+  read -r -p "  Press Enter to install uv (or close this window to stop): " _
+  # The one allowed pipe: uv's official installer, after you said yes above.
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  hash -r
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "  ✗ uv didn't install, so check your internet connection and run ./setup again." >&2
+    exit 1
+  fi
+fi
+
+echo "  Getting Python ready for Tilia (about a minute the first time)..."
+uv sync --quiet
+
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  hooks="$(git rev-parse --git-path hooks)"
+  mkdir -p "$hooks"
+  cp scripts/pre-commit "$hooks/pre-commit"
+  chmod +x "$hooks/pre-commit"
+fi
+
+exec uv run --quiet python -m tilia.setup_wizard "$@"

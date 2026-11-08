@@ -1,0 +1,245 @@
+import os
+import stat
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from tilia import config, paths
+from tilia.store import Store
+
+REPO = Path(__file__).resolve().parent.parent
+NOW = datetime(2026, 11, 7, 15, 0).astimezone()
+
+
+@pytest.fixture
+def store(home):
+    return Store(paths.db_path())
+
+
+def test_data_dir_inside_repo_refused(monkeypatch):
+    monkeypatch.setenv("TILIA_HOME", str(REPO / "data"))
+    with pytest.raises(RuntimeError):
+        paths.data_dir()
+    assert not (REPO / "data").exists()
+
+
+def test_data_dir_inside_repo_via_symlink_refused(tmp_path, monkeypatch):
+    link = tmp_path / "link"
+    link.symlink_to(REPO)
+    monkeypatch.setenv("TILIA_HOME", str(link / "data"))
+    with pytest.raises(RuntimeError):
+        paths.data_dir()
+
+
+def test_data_dir_mode_0700(home):
+    d = paths.data_dir()
+    assert d == home.resolve() or d == home
+    assert stat.S_IMODE(os.stat(d).st_mode) == 0o700
+    assert paths.db_path().parent == d
+    assert paths.config_path().name == "config.toml"
+
+
+def test_config_roundtrip_defaults_and_threads(home):
+    c = config.load()
+    assert c.model == "sonnet" and c.chat_id is None and c.checkin_cap == 2
+    assert (c.quiet_start, c.quiet_end) == (22, 9)
+    assert c.referrals == "never" and c.tone == "very_direct" and c.goal == ""
+    c.chat_id = 1234
+    c.goal = 'say "hi" \\ more'
+    c.battery_awake = True
+    c.paused_until = "2026-11-08T09:00:00-08:00"
+    c.threads = [{"name": "Ann Test", "chat_id": 5}, {"name": "Bo", "chat_id": 6}]
+    config.save(c)
+    assert config.load() == c
+    c.paused_until = None
+    config.save(c)
+    assert config.load().paused_until is None
+
+
+def test_config_ignores_unknown_keys(home):
+    paths.config_path().write_text('model = "opus"\nbogus = 3\n')
+    c = config.load()
+    assert c.model == "opus" and c.checkin_cap == 2
+
+
+def test_turns_and_recent_order(store):
+    store.add_turn("user", "a")
+    store.add_turn("coach", "b", state="crisis")
+    store.add_turn("user", "c")
+    t = store.recent_turns(2)
+    assert [x.text for x in t] == ["b", "c"]
+    assert t[0].role == "coach" and t[0].state == "crisis"
+
+
+def test_pending_take_clears(store):
+    store.add_pending("x")
+    store.add_pending("y")
+    assert store.take_pending() == ["x", "y"]
+    assert store.take_pending() == []
+
+
+def test_one_open_challenge_query(store):
+    assert store.open_challenge() is None
+    r = store.add_assignment("rehearsal", "r", "2026-11-09")
+    c = store.add_assignment("challenge", "c", "2026-11-10")
+    assert store.open_challenge().id == c
+    assert {a.id for a in store.open_assignments()} == {r, c}
+    store.close_assignment(c, "done")
+    assert store.open_challenge() is None
+    assert [a.id for a in store.open_assignments()] == [r]
+
+
+def test_checkins_counts(store):
+    store.add_checkin("r", "t", True)
+    store.add_checkin("r", "t", False)
+    n = datetime.now().astimezone()
+    assert store.checkins_today(n) == 1
+    assert store.unreplied_streak() == 1
+    store.add_checkin("r", "t2", True)
+    assert store.unreplied_streak() == 2
+    store.mark_last_checkin_replied()
+    assert store.unreplied_streak() == 0
+    store.add_checkin("r", "t3", True)
+    assert store.unreplied_streak() == 1
+
+
+def test_signals_and_intent(store):
+    old = NOW - timedelta(days=10)
+    store.add_signal(7, "late", "d", old)
+    store.add_signal(0, "intent", "ask Ann", NOW)
+    rows = store.signals_since(NOW - timedelta(days=7))
+    assert len(rows) == 1 and rows[0]["kind"] == "intent" and rows[0]["chat_id"] == 0
+
+
+def test_text_msgs_and_cursor(store):
+    store.add_text_msgs([(1, 10, NOW.isoformat(), 0, "hey"), (1, 11, NOW.isoformat(), 1, "yo")])
+    assert len(store.text_msgs(1)) == 2
+    assert len(store.text_msgs(1, limit=1)) == 1
+    assert store.text_msgs(1, since=NOW + timedelta(hours=1)) == []
+    assert store.cursor(1) == 0
+    store.set_cursor(1, 11)
+    assert store.cursor(1) == 11
+
+
+def test_corrections_journal_meta(store):
+    store.add_correction("not that")
+    store.add_journal("went ok")
+    assert store.corrections() == ["not that"]
+    assert store.get_meta("k") is None
+    store.set_meta("k", "v")
+    store.set_meta("k", "w")
+    assert store.get_meta("k") == "w"
+
+
+def _fill(store, at):
+    store.add_turn("user", "u")
+    store.add_pending("p")
+    store.add_assignment("challenge", "c", "d")
+    store.add_checkin("r", "t", True)
+    store.add_signal(1, "k", "d", at)
+    store.add_text_msgs([(1, 1, at.isoformat(), 0, "t")])
+    store.set_cursor(1, 1)
+    store.add_correction("c")
+    store.add_journal("j")
+    store.set_meta("k", "v")
+
+
+def test_forget_all_empties_every_table(store):
+    _fill(store, NOW)
+    assert all(v > 0 for v in store.stats().values())
+    store.forget("all", NOW)
+    assert all(v == 0 for v in store.stats().values())
+
+
+def test_forget_last_removes_latest_turn_pair(store):
+    store.add_turn("user", "1")
+    store.add_turn("coach", "2")
+    store.add_turn("user", "3")
+    store.add_turn("coach", "4")
+    store.forget("last", NOW)
+    assert [t.text for t in store.recent_turns(10)] == ["1", "2"]
+
+
+def test_forget_day_removes_today_only(store):
+    yesterday = NOW - timedelta(days=1)
+    store._conn.execute(
+        "INSERT INTO turns(at,role,text,state) VALUES (?,?,?,?)",
+        (yesterday.isoformat(), "user", "old", "ok"),
+    )
+    store._conn.execute(
+        "INSERT INTO turns(at,role,text,state) VALUES (?,?,?,?)",
+        (NOW.isoformat(), "user", "new", "ok"),
+    )
+    store.add_signal(1, "k", "d", yesterday)
+    store.add_signal(1, "k", "d", NOW)
+    store.forget("day", NOW)
+    assert [t.text for t in store.recent_turns(10)] == ["old"]
+    assert store.stats()["signals"] == 1
+
+
+def test_peek_and_delete_pending(store):
+    store.add_pending("x")
+    store.add_pending("y")
+    rows = store.peek_pending()
+    assert [t for _, t in rows] == ["x", "y"]
+    store.add_pending("z")
+    store.delete_pending(rows[-1][0])
+    assert [t for _, t in store.peek_pending()] == ["z"]
+
+
+def test_atomic_rolls_back_on_any_exception(store):
+    store.add_pending("keep me")
+    try:
+        with store.atomic():
+            store.add_turn("user", "half-written")
+            store.delete_pending(store.peek_pending()[-1][0])
+            raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        pass
+    assert store.recent_turns(5) == []
+    assert [t for _, t in store.peek_pending()] == ["keep me"]
+    with store.atomic():
+        store.add_turn("user", "whole")
+    assert [t.text for t in store.recent_turns(5)] == ["whole"]
+
+
+def test_forget_all_leaves_no_trace_in_db_or_wal(tmp_path):
+    p = tmp_path / "x.db"
+    s = Store(p)
+    marker = "zebra-quokka-7731-distinctive"
+    s._x("INSERT INTO journal(at, text) VALUES(?,?)", ("2026-01-01T00:00:00+00:00", marker))
+    raw = b"".join(f.read_bytes() for f in tmp_path.glob("x.db*"))
+    assert marker.encode() in raw
+    s.forget("all", NOW)
+    for f in tmp_path.glob("x.db*"):
+        assert marker.encode() not in f.read_bytes()
+
+
+def test_open_tightens_existing_sidecars(home):
+    import stat
+    db = paths.db_path()
+    Store(db)
+    for suffix in ("-wal", "-shm"):
+        side = db.with_name(db.name + suffix)
+        side.touch()
+        side.chmod(0o644)
+    Store(db)
+    for suffix in ("", "-wal", "-shm"):
+        side = db.with_name(db.name + suffix)
+        assert stat.S_IMODE(side.stat().st_mode) == 0o600, suffix
+
+
+def test_agent_and_setup_create_files_private(home, monkeypatch):
+    import os
+    import stat
+    from tilia import __main__ as cli
+    from tilia import setup_wizard
+    masks = []
+    monkeypatch.setattr(os, "umask", lambda m: masks.append(m) or 0o022)
+    assert cli.main(["status"]) == 0
+    assert masks == [0o077]
+    tmp = paths.data_dir() / "tmp"
+    assert stat.S_IMODE(tmp.stat().st_mode) == 0o700  # the plist's TMPDIR exists, private
+    assert setup_wizard.main(["no-such-step"]) == 2
+    assert masks == [0o077, 0o077]
