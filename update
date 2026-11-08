@@ -5,8 +5,9 @@
 #   3. Prints the audit prompt from the PRIVACY.md you already have installed (never from
 #      the incoming version, which could reword it), so your own AI can check the new code.
 #   4. Only if you type yes: switches to the new version, updates Python parts,
-#      and restarts Tilia (scripts/install.sh). If any of that fails, it puts the
-#      old version back the same way.
+#      reinstalls Tilia's background agent (scripts/install.sh) and restarts it on the
+#      new code (launchctl kickstart -k, or bootstrap if it wasn't loaded). If any of
+#      that fails, it puts the old version back the same way.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -65,6 +66,8 @@ rollback() {
   git -c advice.detachedHead=false checkout --quiet "$prev"
   uv sync --quiet
   scripts/install.sh
+  # an older version may not know restart-agent; install.sh above already restarted it
+  uv run --quiet python -m tilia.setup_wizard restart-agent >/dev/null 2>&1
   echo "  ✗ The update didn't finish, so Tilia is back on $current." >&2
   exit 1
 }
@@ -72,5 +75,6 @@ trap rollback ERR
 git -c advice.detachedHead=false checkout --quiet "$latest"
 uv sync --quiet
 scripts/install.sh
+uv run --quiet python -m tilia.setup_wizard restart-agent
 trap - ERR
-echo "  ✓ Updated to $latest."
+echo "  ✓ Updated to $latest. Tilia restarted on $latest."

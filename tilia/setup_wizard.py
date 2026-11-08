@@ -650,6 +650,9 @@ class Wizard:
 
     # 5 ---------------------------------------------------------------------------------
     def texts(self) -> bool:
+        current = config.load().threads
+        if current:
+            return self._texts_edit(current)
         self.screen("texts", [
             "Tilia can read a few text threads you choose, like the one with",
             "your partner, so it sees what was actually said, not a memory of it.",
@@ -664,11 +667,7 @@ class Wizard:
             threads = self._pick_threads()
             if not threads:
                 return self._texts_off()
-            self.ui.say("")
-            self.ui.say("How far back should Tilia read these threads the first time?")
-            self.ui.say("[1] last 12 months (recommended)")
-            self.ui.say("[2] all history")
-            days = self._choose_t("Choose 1 or 2 (Enter = 1): ", {"1": 365, "2": ALL_HISTORY_DAYS}, "1")
+            days = self._ask_backfill()
         except Back:
             return self._texts_off()
         cfg = config.load()
@@ -678,6 +677,76 @@ class Wizard:
         names = ", ".join(t["name"] for t in threads)
         self.ui.ok(f"Tilia will read your texts with {names}")
         return True
+
+    def _ask_backfill(self) -> int:
+        self.ui.say("")
+        self.ui.say("How far back should Tilia read these threads the first time?")
+        self.ui.say("[1] last 12 months (recommended)")
+        self.ui.say("[2] all history")
+        return self._choose_t("Choose 1 or 2 (Enter = 1): ", {"1": 365, "2": ALL_HISTORY_DAYS}, "1")
+
+    def _texts_edit(self, current: list[dict]) -> bool:
+        """A re-run with threads already chosen: show them and edit the list. `skip` (or
+        Enter) keeps the list; only option 4, confirmed, turns reading off."""
+        threads = [dict(t) for t in current]
+        added = False
+        self.screen("texts", [
+            "Tilia reads a few text threads you chose. It only reads; it never sends a text.",
+        ])
+        try:
+            while True:
+                names = ", ".join(t["name"] for t in threads)
+                self.ui.say("")
+                self.ui.say(f"Tilia reads your texts with: {names}." if threads
+                            else "Tilia isn't reading anyone's texts right now.")
+                self.ui.say("[1] Add someone  [2] Remove someone  [3] Keep as is  "
+                            "[4] Turn reading off")
+                pick = self._choose_t("Choose 1-4 (Enter = 3): ",
+                                      {"1": "add", "2": "remove", "3": "keep", "4": "off"}, "3")
+                if pick == "keep":
+                    break
+                if pick == "add":
+                    have = {t["chat_id"] for t in threads}
+                    new = [t for t in self._pick_threads(have) if t["chat_id"] not in have]
+                    threads += new
+                    added = added or bool(new)
+                elif pick == "remove":
+                    self._remove_thread(threads)
+                elif self.yes_no("Stop reading all texts?", self._ask_t):
+                    return self._texts_off()
+        except Back:
+            pass  # skip = keep the list as it stands
+        cfg = config.load()
+        days = cfg.backfill_days
+        if added:
+            try:
+                days = self._ask_backfill()  # only new threads start from this far back
+            except Back:
+                pass
+        cfg.threads = threads
+        cfg.backfill_days = days
+        config.save(cfg)
+        if threads:
+            self.ui.ok(f"Tilia will read your texts with {', '.join(t['name'] for t in threads)}")
+        else:
+            self.ui.ok("Tilia won't read any texts")
+        return True
+
+    def _remove_thread(self, threads: list[dict]) -> None:
+        if not threads:
+            self.ui.fail("There's no one to remove, so choose another option.")
+            return
+        for i, t in enumerate(threads, 1):
+            self.ui.say(f"[{i}] {t['name']}")
+        while True:
+            raw = self._ask_t("Type the number to remove (Enter = none): ").strip()
+            if not raw:
+                return
+            if raw.isdigit() and 1 <= int(raw) <= len(threads):
+                gone = threads.pop(int(raw) - 1)
+                self.ui.ok(f"Removed {gone['name']}")
+                return
+            self.ui.fail(f"Please type a number from 1 to {len(threads)}.")
 
     def _ask_t(self, prompt: str) -> str:
         ans = self.ui.ask(prompt)
@@ -736,7 +805,7 @@ class Wizard:
             self.ui.fail("No texts from this week are on this Mac, so turn on Messages in iCloud "
                          "on your iPhone and here (Messages → Settings → iMessage).")
 
-    def _pick_threads(self) -> list[dict]:
+    def _pick_threads(self, have: set | frozenset = frozenset()) -> list[dict]:
         self.screen("texts", [
             "Whose texts should Tilia read? Type one name at a time,",
             "the way they're saved in your Contacts. First name is fine.",
@@ -751,7 +820,7 @@ class Wizard:
                 self.ui.fail("Messages or Contacts couldn't be read, so check Full Disk Access is on.")
                 continue
             matches = [m for m in res.get("matches", [])
-                       if m["chat_id"] not in {c["chat_id"] for c in chosen}]
+                       if m["chat_id"] not in {c["chat_id"] for c in chosen} | set(have)]
             if not matches:
                 self.ui.fail("No text thread matches that name, so try how it's saved in Contacts.")
                 continue
@@ -1360,9 +1429,25 @@ def audit_prompt(privacy_text: str) -> str:
     return found or _AUDIT_FALLBACK
 
 
+def restart_agent(run=subprocess.run, uid: int | None = None, plist: Path = AGENT_PLIST) -> int:
+    """Make the background agent run the code now in this folder. ./update calls this after
+    scripts/install.sh, so a restart never depends on bootout/bootstrap having taken effect:
+    kickstart -k when the agent is loaded (kills it; launchd starts it fresh), bootstrap when
+    it isn't. Returns launchctl's exit code."""
+    uid = os.getuid() if uid is None else uid
+    target = f"gui/{uid}/{AGENT_LABEL}"
+    if run(["launchctl", "print", target], capture_output=True).returncode == 0:
+        cmd = ["launchctl", "kickstart", "-k", target]
+    else:
+        cmd = ["launchctl", "bootstrap", f"gui/{uid}", str(plist)]
+    return run(cmd, capture_output=True).returncode
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     os.umask(0o077)  # files setup makes (config, state, the database) are private
+    if argv[:1] == ["restart-agent"]:
+        return restart_agent()
     if argv[:1] == ["audit-prompt"]:
         src = argv[1] if len(argv) > 1 else None
         text = Path(src).read_text(encoding="utf-8") if src else sys.stdin.read()

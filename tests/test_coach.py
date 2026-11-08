@@ -454,3 +454,24 @@ def test_no_prose_during_an_open_episode_holds_never_retries(store, state_out):
     assert "988" not in r.reply  # already said once this episode
     last = store.recent_turns(1)[0]
     assert last.text == coach.CRISIS_HOLD
+
+
+def test_settings_show_the_checkin_limit_and_quiet_hours(store):
+    p = coach.build_prompt(store, cfg(checkin_cap=3, quiet_start=23, quiet_end=8), NOW, ["hi"])
+    settings = p[p.index("SETTINGS"):p.index("PROFILE")]
+    assert "check-ins: up to 3 a day" in settings
+    assert "quiet hours: 23:00-08:00" in settings
+
+
+def test_settings_show_a_pause(store):
+    until = (NOW + timedelta(hours=5)).isoformat()
+    p = coach.build_prompt(store, cfg(paused_until=until), NOW, ["hi"])
+    assert "check-ins paused until" in p[p.index("SETTINGS"):p.index("PROFILE")]
+    p = coach.build_prompt(store, cfg(paused_until=(NOW - timedelta(hours=1)).isoformat()), NOW, ["hi"])
+    assert "paused" not in p[p.index("SETTINGS"):p.index("PROFILE")]
+
+
+def test_coach_prompt_texting_first_respects_off_and_quiet_hours():
+    flat = " ".join(coach.system_prompt("chat").split())
+    assert "up to 0 a day" in flat and "paused" in flat
+    assert "falls in their quiet hours" in flat

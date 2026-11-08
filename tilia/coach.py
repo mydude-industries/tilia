@@ -100,11 +100,24 @@ def _track_crisis(store, now, r: CoachReply) -> None:
 
 # ---- prompt sections -------------------------------------------------------
 
-def _settings(cfg) -> str:
+def _paused_note(cfg, now) -> str:
+    if not cfg.paused_until or now is None:
+        return ""
+    try:
+        until = datetime.fromisoformat(cfg.paused_until)
+    except (TypeError, ValueError):
+        return ""
+    return f"; check-ins paused until {_hm(cfg.paused_until)}" if now < until else ""
+
+
+def _settings(cfg, now=None) -> str:
     tone = cfg.tone if cfg.tone in _TONES else "direct_soft"
     referrals = cfg.referrals if cfg.referrals in _REFERRALS else "never"
     return (f"SETTINGS (chosen by the person; follow them)\n"
             f"tone: {tone}\nreferrals: {referrals}\n"
+            f"check-ins: up to {max(0, int(cfg.checkin_cap))} a day; "
+            f"quiet hours: {int(cfg.quiet_start):02d}:00-{int(cfg.quiet_end):02d}:00"
+            f"{_paused_note(cfg, now)}\n"
             f"goal (the person's own words, verbatim):\n"
             f"{_tag('goal', cfg.goal or '', '(not set yet)')}")
 
@@ -165,7 +178,7 @@ def build_prompt(store, cfg, now, incoming: list[str], mode: str = "chat") -> st
     parts = [
         f"Current local time: {now.astimezone().strftime('%Y-%m-%d %H:%M (%A)')}\n{mode_line}\n"
         f"{DATA_NOTE}",
-        _settings(cfg),
+        _settings(cfg, now),
         "PROFILE (your working notes on this person)\n"
         + _tag("profile", profile.read(), "(empty: you are just getting to know them)"),
         "CORRECTIONS (facts from the person; these override the profile wherever they "

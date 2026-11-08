@@ -18,11 +18,20 @@ TALKING = timedelta(minutes=30)
 UNREPLIED_HALVES = 3
 CHECKINS_IN_PROMPT = 10
 USED_KEEP = 300
+FOLLOWUP_MIN, FOLLOWUP_MAX = timedelta(hours=12), timedelta(hours=36)
+FOLLOWUP_USER_TURNS = 4   # a "substantial" conversation
+FOLLOWUP_TURNS = 12       # how much of it the drafter sees
+CARE_QUIET = timedelta(hours=36)
+CRISIS_RECENT = coach.EPISODE_GAP + timedelta(hours=72)  # episode ended within 72 h
+CRISIS_IN_CONVO = "This conversation included a crisis moment; the episode is over."
+CRISIS_LATELY = "A conversation in the last few days included a crisis moment; the episode is over."
+CONVO_SCAN = 200          # turns searched for the last conversation
 _STATE, _USED = "checkin_state", "used_signal_ids"
+_USED_KEYS = "used_checkin_keys"  # followup / care keys that already fired
 
-# lower is stronger
-_PRIO = {"assignment": 0, "conflict": 1, "repair": 1, "unanswered_question": 1,
-         "intent": 2, "bid": 3, "pattern_hit": 3, "long_silence": 3, "anchor": 4}
+# lower is stronger. A user-requested check-in (intent) is as strong as a due assignment.
+_PRIO = {"assignment": 0, "intent": 0, "conflict": 1, "repair": 1, "unanswered_question": 1,
+         "bid": 3, "pattern_hit": 3, "long_silence": 3, "followup": 3, "anchor": 4, "care": 5}
 
 _WHEN = re.compile(r"\b(today|tonight|this (morning|afternoon|evening)|later|at \d{1,2}"
                    r"|\d{1,2}(:\d\d)? ?(am|pm)|\d{1,2}:\d\d)\b", re.I)
@@ -38,7 +47,8 @@ _HHMM = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 class Candidate:
     reason: str     # short label, stored in the checkins table (never raw text)
     context: str    # the specifics, used only inside prompts
-    key: str = ""   # "a:<assignment id>", "s:<signal id>" or "t:<turn id>"
+    key: str = ""   # "a:<assignment id>", "s:<signal id>", "t:<turn id>",
+    #                 "f:<last user turn id>" (followup) or "c:<last turn id>" (care)
     prio: int = 9
     at: str = ""
 
@@ -51,9 +61,21 @@ def _state(store, now) -> dict:
         st = json.loads(store.get_meta(_STATE) or "{}")
     except ValueError:
         st = {}
-    if not isinstance(st, dict) or st.get("day") != today:
-        st = {"day": today, "tried": [], "defer": {}}
+    if not isinstance(st, dict):
+        st = {}
+    if st.get("day") != today:
+        # "tried" is per day; a deferral can point at a later day, so it carries over
+        defer = st.get("defer") if isinstance(st.get("defer"), dict) else {}
+        st = {"day": today, "tried": [],
+              "defer": {k: v for k, v in defer.items() if _future(v, now)}}
     return st
+
+
+def _future(iso, now) -> bool:
+    try:
+        return datetime.fromisoformat(iso) > now
+    except (TypeError, ValueError):
+        return False
 
 
 def _save_state(store, st) -> None:
@@ -65,6 +87,14 @@ def _used(store) -> set[int]:
         return set(json.loads(store.get_meta(_USED) or "[]"))
     except ValueError:
         return set()
+
+
+def _used_keys(store) -> list[str]:
+    try:
+        keys = json.loads(store.get_meta(_USED_KEYS) or "[]")
+    except ValueError:
+        return []
+    return keys if isinstance(keys, list) else []
 
 
 def _available(store, now):
@@ -136,9 +166,8 @@ def _signal_cands(store, cfg, now) -> list[Candidate]:
         key = f"s:{s['id']}"
         if s["chat_id"] == 0:
             if s["kind"] == "intent" and age <= INTENT_FRESH:
-                out.append(Candidate(
-                    "intent", f"At {_hm(s['at'])} they told you they would: {s['detail']}",
-                    key, _PRIO["intent"], s["at"]))
+                out.append(Candidate("intent", _intent_context(s, cfg, now), key,
+                                     _PRIO["intent"], s["at"]))
             continue
         name = names.get(s["chat_id"])
         if name is None or s["kind"] not in _PRIO or age > SIGNAL_FRESH:
@@ -157,6 +186,103 @@ def _signal_cands(store, cfg, now) -> list[Candidate]:
             ctx = f"In the {name} thread (noticed {_hm(s['at'])}): {s['kind']}: {s['detail']}"
         out.append(Candidate(f"signal:{s['kind']}", ctx, key, _PRIO[s["kind"]], s["at"]))
     return out
+
+
+def _day_hm(iso_or_dt) -> str:
+    d = datetime.fromisoformat(iso_or_dt) if isinstance(iso_or_dt, str) else iso_or_dt
+    return d.astimezone().strftime("%Y-%m-%d %H:%M (%A)")
+
+
+def _intent_context(s, cfg, now) -> str:
+    return (f"Noted {_day_hm(s['at'])}: {s['detail']}\n"
+            f"It is now {_day_hm(now)}. Either they asked you to check on them, or they told "
+            "you they'd do this; either way they want you to follow up. Read any time in it "
+            "(\"tonight\", \"tomorrow\", \"at 6\") against when it was noted. If that moment "
+            "hasn't come yet, return no message and set not_before to it: \"HH:MM\" for later "
+            "today, \"YYYY-MM-DD HH:MM\" for a later day. Their quiet hours are "
+            f"{int(cfg.quiet_start):02d}:00-{int(cfg.quiet_end):02d}:00 and nothing is sent then: "
+            "if the moment falls inside them, defer to just before they start, not into them.")
+
+
+def _convo_lines(turns) -> str:
+    return "\n".join(f"[{_hm(t.at)}] {'person' if t.role == 'user' else f'tilia [{t.state}]'}: "
+                     f"{t.text}" for t in turns)
+
+
+def _has_crisis(turns) -> bool:
+    return any(t.state == "crisis" for t in turns)
+
+
+def _recent_crisis(store, now) -> bool:
+    """A crisis episode that ended within the last 72 h (or is still going)."""
+    last = store.get_meta(coach._CRISIS_LAST)
+    try:
+        if last and now - datetime.fromisoformat(last) < CRISIS_RECENT:
+            return True
+    except ValueError:
+        pass
+    return any(t.state == "crisis" and now - datetime.fromisoformat(t.at) < CRISIS_RECENT
+               for t in store.recent_turns(CONVO_SCAN))
+
+
+def _last_conversation(store) -> list:
+    """The most recent idle period (turns less than TALKING apart) with a user turn in it."""
+    turns = store.recent_turns(CONVO_SCAN)
+    segs, cur = [], []
+    for t in turns:
+        if cur and datetime.fromisoformat(t.at) - datetime.fromisoformat(cur[-1].at) >= TALKING:
+            segs.append(cur)
+            cur = []
+        cur.append(t)
+    if cur:
+        segs.append(cur)
+    return next((s for s in reversed(segs) if any(t.role == "user" for t in s)), [])
+
+
+def _followup_cand(store, now) -> Candidate | None:
+    """A substantial conversation that ended 12-36 h ago, with nothing from either side since."""
+    seg = _last_conversation(store)
+    users = [t for t in seg if t.role == "user"]
+    if len(users) < FOLLOWUP_USER_TURNS:
+        return None
+    end = datetime.fromisoformat(seg[-1].at)
+    if not FOLLOWUP_MIN <= now - end <= FOLLOWUP_MAX:
+        return None
+    if any(r["sent"] and datetime.fromisoformat(r["at"]) > end
+           for r in store.recent_checkins(CHECKINS_IN_PROMPT)):
+        return None
+    return Candidate(
+        "followup",
+        f"Your last real conversation ended {_day_hm(end)}; nothing from either of you since. "
+        f"Its last turns:\n{_convo_lines(seg[-FOLLOWUP_TURNS:])}\n"
+        + (CRISIS_IN_CONVO + " Follow the crisis rule." if _has_crisis(seg) else
+           "Anchor on the single most important open thread in it: a decision they were "
+           "weighing, a talk they were dreading, a feeling they named."),
+        f"f:{users[-1].id}", _PRIO["followup"], seg[-1].at)
+
+
+def _care_cand(store, cfg, now) -> Candidate | None:
+    """The floor: no message either way for 36 h. Keyed on the person's last message, so an
+    unanswered care check-in is never followed by another until they write again."""
+    last = store.recent_turns(1)
+    if not last or now - datetime.fromisoformat(last[0].at) < CARE_QUIET:
+        return None
+    seg = _last_conversation(store)
+    users = [t for t in seg if t.role == "user"]
+    if not users:
+        return None
+    asg = "\n".join(f"#{a.id} [{a.kind}] {a.text} (due {a.due or 'no date'})"
+                    for a in store.open_assignments())
+    return Candidate(
+        "care",
+        f"No message either way since {_day_hm(last[0].at)}.\n"
+        f"Their goal, in their words: {cfg.goal or '(not set)'}\n"
+        f"Open assignments:\n{asg or '(none)'}\n"
+        f"The last conversation's last turns:\n{_convo_lines(seg[-FOLLOWUP_TURNS:]) or '(none)'}\n"
+        "Anchor on one concrete thing here (their goal, an open thread, an assignment). "
+        "This is not permission for a general hello."
+        + ("\n" + CRISIS_IN_CONVO + " Follow the crisis rule." if _has_crisis(seg) else ""),
+        f"c:{users[-1].id}", _PRIO["care"], last[0].at)
 
 
 def _anchor_cand(store, now) -> Candidate | None:
@@ -180,12 +306,20 @@ def _anchor_cand(store, now) -> Candidate | None:
 
 def candidates(store, cfg, now) -> list[Candidate]:
     """Every current reason to check in, strongest first. Makes no Claude call."""
-    ok = _available(store, now)
+    avail, used = _available(store, now), set(_used_keys(store))
+
+    def ok(c):
+        return avail(c.key) and c.key not in used
     cands = _assignment_cands(store, now) + _signal_cands(store, cfg, now)
-    anchor = _anchor_cand(store, now)
-    if anchor:
-        cands.append(anchor)
-    cands = [c for c in cands if ok(c.key)]
+    cands += [c for c in (_followup_cand(store, now), _anchor_cand(store, now)) if c]
+    if not cands:  # before the availability filter: a reason tried or deferred today still counts
+        care = _care_cand(store, cfg, now)
+        cands = [care] if care else []
+    cands = [c for c in cands if ok(c)]
+    if cands and _recent_crisis(store, now):
+        for c in cands:
+            if CRISIS_IN_CONVO not in c.context:
+                c.context += "\n" + CRISIS_LATELY + " Follow the crisis rule."
     cands.sort(key=lambda c: c.at, reverse=True)  # newest first within a priority
     cands.sort(key=lambda c: c.prio)
     return cands
@@ -268,7 +402,7 @@ def _recent_checkins(store, now) -> str:
 def build_draft_prompt(store, cfg, now, c: Candidate) -> str:
     return "\n\n".join([
         _header(now),
-        coach._settings(cfg),
+        coach._settings(cfg, now),
         _profile(),
         _corrections(store),
         coach._assignments(store),
@@ -323,12 +457,18 @@ def _parse_draft(obj, now) -> tuple[str | None, datetime | None]:
     msg = msg.strip() if isinstance(msg, str) and msg.strip() else None
     nb, when = obj.get("not_before"), None
     if msg is None and isinstance(nb, str):
-        m = _HHMM.match(nb.strip())
+        nb = nb.strip()
+        m = _HHMM.match(nb)
         if m:
             when = now.astimezone().replace(hour=int(m[1]), minute=int(m[2]),
                                             second=0, microsecond=0)
-            if when <= now:
+        else:
+            try:  # "YYYY-MM-DD HH:MM": a later day
+                when = datetime.strptime(nb, "%Y-%m-%d %H:%M").astimezone()
+            except ValueError:
                 when = None
+        if when is not None and when <= now:
+            when = None
     return msg, when
 
 
@@ -345,6 +485,8 @@ def _consume(store, c: Candidate, now, sent: bool, final: bool) -> None:
         store.set_meta(_USED, json.dumps(used))
     elif kind == "a" and sent:
         store.mark_followed_up(int(ref), now)
+    elif (kind in ("f", "c") and final) or kind == "c":  # care: silence is final too
+        store.set_meta(_USED_KEYS, json.dumps((_used_keys(store) + [c.key])[-USED_KEEP:]))
 
 
 def _defer(store, c: Candidate, now, until) -> None:
@@ -370,7 +512,7 @@ def maybe_send(store, cfg, now, run=subprocess.run) -> bool:
     msg, later = _parse_draft(draft, now)
     if msg is None:
         if later is not None:
-            _defer(store, c, now, later)  # the right moment is later today
+            _defer(store, c, now, later)  # the right moment is later (today or a later day)
         else:
             _consume(store, c, now, sent=False, final=False)  # silence, for today
         return False

@@ -574,7 +574,9 @@ def _tagged_repo(tmp_path, real_audit=False, new_install_fails=False):
             f'#!/bin/bash\n[ "$1" = run ] && cd "{REPO}" && exec "{REPO}/.venv/bin/python" '
             '-m tilia.setup_wizard audit-prompt\nexit 0\n')
     else:
-        (fakebin / "uv").write_text('#!/bin/bash\n[ "$1" = run ] && cat\nexit 0\n')
+        (fakebin / "uv").write_text(
+            '#!/bin/bash\ncase "$*" in *restart-agent*) echo "fake restart"; exit 0;; esac\n'
+            '[ "$1" = run ] && cat\nexit 0\n')
     (fakebin / "uv").chmod(0o755)
     env = {**os.environ, "PATH": f"{fakebin}:/usr/bin:/bin", "HOME": str(tmp_path)}
     return repo, env
@@ -597,6 +599,12 @@ def test_update_needs_typed_yes(tmp_path, answer, expect):
     assert "Read this entire project" in r.stdout  # the audit prompt
     assert _head_tag(repo) == expect
     assert ("fake install" in r.stdout) == (expect == "v0.2.0")
+    if expect == "v0.2.0":  # install, then an explicit restart on the new code, then say so
+        out = r.stdout
+        assert out.index("fake install") < out.index("fake restart")
+        assert out.rstrip().splitlines()[-1].strip().endswith("Tilia restarted on v0.2.0.")
+    else:
+        assert "fake restart" not in r.stdout
 
 
 def test_missing_token_sends_her_back_to_step_2(state):
@@ -798,10 +806,10 @@ def test_all_set_screen_lists_the_reentry_commands(state):
 
 def test_setup_texts_reruns_only_texts_and_restarts_the_agent(state):
     _finished(state)
-    io = FakeIO(["n"], installed=True)
+    io = FakeIO([""], installed=True)
     assert run(state, io, redo="texts") == 0
     assert set(_screens_for(io)) == {"Step 5 of 6"}
-    assert config.load().threads == []
+    assert config.load().threads == [{"name": "Alex Doe", "chat_id": 31}]
     assert done_steps(state) == list(STEPS)
     assert io.runs.count(["scripts/install.sh"]) == 1
     assert io.sent == [] and io.tokens == []
@@ -853,7 +861,7 @@ def test_setup_all_walks_every_step(state, monkeypatch):
     import tilia.setup_wizard as sw
     monkeypatch.setattr(sw.secrets, "randbelow", lambda n: 418207)
     _finished(state)
-    io = FakeIO(["n", "", GOOD, "y", "", "", "n", "", "", "", "skip", "n"], installed=True,
+    io = FakeIO(["n", "", GOOD, "y", "", "", "", "", "", "", "skip", "n"], installed=True,
                 tg_updates=[[U(9, 4242, "418207")]])
     assert run(state, io, redo="all") == 0
     labels = set(_screens_for(io))
@@ -1110,3 +1118,114 @@ def test_help_at_the_already_made_question(state):
     assert HELP["make_bot"].splitlines()[0] in io.text()
     assert "Please type y or n." in io.text()  # skip is not offered
     assert io.tokens == [GOOD]
+
+
+
+# ---- v0.1.4: ./setup texts shows and edits the current list --------------------------
+
+ALEX = {"name": "Alex Doe", "chat_id": 31}
+SAM = {"name": "Sam Roe", "chat_id": 32}
+CHATS = {"sam": [{"name": "Sam Roe", "chat_id": 32, "handle": "+15550104321"}],
+         "alex": [{"name": "Alex Doe", "chat_id": 31, "handle": "+15550101234"}]}
+
+
+def _edit(state, inputs, threads=(ALEX,), backfill=365):
+    _finished(state)
+    cfg = config.load()
+    cfg.threads, cfg.backfill_days = [dict(t) for t in threads], backfill
+    config.save(cfg)
+    io = FakeIO(inputs, installed=True, chats=CHATS)
+    assert run(state, io, redo="texts") == 0
+    return io, config.load()
+
+
+def test_texts_rerun_shows_the_list_and_keeps_it_on_enter(state):
+    io, cfg = _edit(state, [""], threads=(ALEX, SAM))
+    assert "Tilia reads your texts with: Alex Doe, Sam Roe." in io.text()
+    assert "[1] Add someone" in io.text() and "[3] Keep as is" in io.text()
+    assert cfg.threads == [ALEX, SAM]
+    assert "How far back" not in io.text()  # nothing added, no backfill question
+    assert not any("Privacy_AllFiles" in u for u in io.opened)
+
+
+def test_texts_add_keeps_existing_and_asks_backfill_for_new(state):
+    io, cfg = _edit(state, ["1", "sam", "y", "", "", "2"])
+    assert cfg.threads == [ALEX, SAM]
+    assert cfg.backfill_days == sw_all_history()
+    assert "Tilia reads your texts with: Alex Doe, Sam Roe." in io.text()  # menu shown again
+
+
+def test_texts_add_never_duplicates(state):
+    io, cfg = _edit(state, ["1", "alex", "", ""])
+    assert cfg.threads == [ALEX]
+    assert "How far back" not in io.text()
+
+
+def test_texts_remove(state):
+    io, cfg = _edit(state, ["2", "1", ""], threads=(ALEX, SAM))
+    assert "[1] Alex Doe" in io.text() and "[2] Sam Roe" in io.text()
+    assert cfg.threads == [SAM]
+
+
+@pytest.mark.parametrize("inputs", [["skip"], ["1", "skip"], ["2", "skip"], ["1", "sam", "skip"],
+                                    ["4", "skip"]])
+def test_texts_skip_keeps_the_list(state, inputs):
+    io, cfg = _edit(state, inputs, threads=(ALEX, SAM))
+    assert cfg.threads == [ALEX, SAM]
+
+
+def test_texts_skip_after_an_add_keeps_the_add(state):
+    io, cfg = _edit(state, ["1", "sam", "y", "", "", "skip"], backfill=200)
+    assert cfg.threads == [ALEX, SAM]
+    assert cfg.backfill_days == 200  # skip at the backfill question keeps the current one
+
+
+def test_texts_turn_off_needs_confirm(state):
+    io, cfg = _edit(state, ["4", "n", ""], threads=(ALEX, SAM))
+    assert cfg.threads == [ALEX, SAM]
+    io, cfg = _edit(state, ["4", "y"], threads=(ALEX, SAM))
+    assert cfg.threads == []
+
+
+# ---- v0.1.4: ./update restarts the running agent ------------------------------------
+
+def _launchctl(loaded, rc=0):
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[:2] == ["launchctl", "print"]:
+            return SimpleNamespace(returncode=0 if loaded else 113, stdout="", stderr="")
+        return SimpleNamespace(returncode=rc, stdout="", stderr="")
+    return run, calls
+
+
+def test_restart_agent_kickstarts_when_loaded(tmp_path):
+    import tilia.setup_wizard as sw
+    run, calls = _launchctl(loaded=True)
+    assert sw.restart_agent(run=run, uid=501, plist=tmp_path / "a.plist") == 0
+    assert calls == [["launchctl", "print", "gui/501/com.tilia.agent"],
+                     ["launchctl", "kickstart", "-k", "gui/501/com.tilia.agent"]]
+
+
+def test_restart_agent_bootstraps_when_not_loaded(tmp_path):
+    import tilia.setup_wizard as sw
+    run, calls = _launchctl(loaded=False)
+    plist = tmp_path / "a.plist"
+    assert sw.restart_agent(run=run, uid=501, plist=plist) == 0
+    assert calls == [["launchctl", "print", "gui/501/com.tilia.agent"],
+                     ["launchctl", "bootstrap", "gui/501", str(plist)]]
+
+
+def test_restart_agent_reports_failure(tmp_path):
+    import tilia.setup_wizard as sw
+    run, _ = _launchctl(loaded=True, rc=5)
+    assert sw.restart_agent(run=run, uid=501, plist=tmp_path / "a.plist") == 5
+
+
+def test_main_restart_agent_subcommand(monkeypatch):
+    import tilia.setup_wizard as sw
+    seen = []
+    monkeypatch.setattr(sw, "restart_agent", lambda **kw: seen.append(kw) or 0)
+    monkeypatch.setattr(sw, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    assert sw.main(["restart-agent"]) == 0 and seen == [{}]

@@ -225,9 +225,9 @@ def test_candidate_sources_and_priority(store, clock):
     clock.t = NOW
     cands = checkins.candidates(store, cfg(), NOW)
     reasons = [c.reason for c in cands]
-    assert reasons == ["signal:unanswered_question", "intent", "signal:bid", "anchor"]
-    assert "are we still on for Sunday?" in cands[0].context and "Riley" in cands[0].context
-    assert "ask Jo about the move" in cands[1].context
+    assert reasons == ["intent", "signal:unanswered_question", "signal:bid", "anchor"]
+    assert "are we still on for Sunday?" in cands[1].context and "Riley" in cands[1].context
+    assert "ask Jo about the move" in cands[0].context
     assert "presentation at 2pm" in cands[3].context
     due_challenge(store)
     assert checkins.candidates(store, cfg(), NOW)[0].reason == "assignment_due"
@@ -341,3 +341,276 @@ def test_judge_sees_the_drafters_context(store):
     assert "night shift" in judge and "photo from the old street" in judge
     assert "can we talk tonight?" in judge
     assert "the open challenge, due today" in judge
+
+
+# ---- v0.1.4: reaching out first ----------------------------------------------
+
+def _talk(store, clock, start, user_lines, gap=timedelta(minutes=3)):
+    """A back-and-forth starting at `start`: each user line gets a coach reply."""
+    t = start
+    for line in user_lines:
+        clock.t = t
+        store.add_turn("user", line)
+        clock.t = t + timedelta(minutes=1)
+        store.add_turn("coach", f"(reply to: {line})")
+        t += gap
+    clock.t = NOW
+    return t
+
+
+FOUR = ["I keep going back and forth on telling Jo about the move",
+        "If I tell her now she'll spend the whole weekend upset",
+        "But waiting feels like lying",
+        "I think I'm leaning toward after the weekend, not sure"]
+
+
+def test_intents_are_top_priority_with_creation_and_current_time(store):
+    due_challenge(store)
+    store.add_signal(7, "conflict", "sharp exchange about Sunday", NOW - H)
+    store.add_signal(0, "intent", "check in on me tonight about the talk with Jo", NOW - 3 * H)
+    cands = checkins.candidates(store, cfg(), NOW)
+    # both at priority 0, ahead of the conflict; newest first within a priority
+    assert [(c.reason, c.prio) for c in cands] == [("assignment_due", 0), ("intent", 0),
+                                                   ("signal:conflict", 1)]
+    ctx = cands[1].context
+    created = (NOW - 3 * H).strftime("%Y-%m-%d %H:%M")
+    assert created in ctx and NOW.strftime("%Y-%m-%d %H:%M") in ctx
+    assert "not_before" in ctx
+
+
+def test_deferral_to_a_later_day_carries_over(store):
+    store.add_signal(0, "intent", "ask me tomorrow how the talk with Jo went", NOW - H)
+    tomorrow = (NOW + D).replace(hour=18, minute=0)
+    run = fake(draft={"message": None, "not_before": tomorrow.strftime("%Y-%m-%d %H:%M"),
+                      "why": "they asked for tomorrow"})
+    assert checkins.maybe_send(store, cfg(), NOW, run) is False
+    assert rows(store) == [] and used_ids(store) == []
+    # the next morning (a new local day) it's still deferred, not retried early
+    assert checkins.candidates(store, cfg(), (NOW + D).replace(hour=10)) == []
+    assert [c.reason for c in checkins.candidates(store, cfg(), tomorrow + timedelta(minutes=1))] \
+        == ["intent"]
+
+
+def test_not_before_in_the_past_or_garbage_is_silence(store):
+    store.add_signal(0, "intent", "ask me tonight", NOW - H)
+    for nb in ("2001-01-01 10:00", "soonish"):
+        msg, when = checkins._parse_draft({"message": None, "not_before": nb}, NOW)
+        assert msg is None and when is None
+
+
+def test_followup_fires_once_for_a_substantial_conversation(store, clock):
+    _talk(store, clock, NOW - 20 * H, FOUR)
+    cands = checkins.candidates(store, cfg(), NOW)
+    assert [c.reason for c in cands] == ["followup"]
+    assert cands[0].prio == 3
+    assert "telling Jo about the move" in cands[0].context
+    assert "after the weekend" in cands[0].context
+    calls = []
+    assert checkins.maybe_send(store, cfg(), NOW, fake(calls=calls)) is True
+    assert "telling Jo about the move" in calls[0][1]
+    # at most once per conversation
+    assert checkins.candidates(store, cfg(), NOW + 2 * H) == []
+    assert checkins.candidates(store, cfg(), NOW + D + 2 * H) == []
+
+
+def test_followup_keeps_only_the_last_twelve_turns(store, clock):
+    lines = [f"point number {i}" for i in range(10)]
+    _talk(store, clock, NOW - 20 * H, lines)
+    ctx = checkins.candidates(store, cfg(), NOW)[0].context
+    assert "point number 9" in ctx and "point number 3" not in ctx
+
+
+def test_no_followup_when_they_messaged_since(store, clock):
+    _talk(store, clock, NOW - 20 * H, FOUR)
+    clock.t = NOW - 5 * H
+    store.add_turn("user", "ok")
+    clock.t = NOW
+    assert "followup" not in [c.reason for c in checkins.candidates(store, cfg(), NOW)]
+
+
+def test_no_followup_after_a_checkin_since(store, clock):
+    _talk(store, clock, NOW - 20 * H, FOUR)
+    clock.t = NOW - 5 * H
+    store.add_checkin("assignment_due", "Did the one line go out?", True)
+    store.add_turn("coach", "Did the one line go out?")
+    clock.t = NOW
+    assert "followup" not in [c.reason for c in checkins.candidates(store, cfg(), NOW)]
+
+
+def test_no_followup_for_a_short_conversation(store, clock):
+    _talk(store, clock, NOW - 20 * H, FOUR[:3])
+    assert checkins.candidates(store, cfg(), NOW) == []
+
+
+def test_no_followup_inside_twelve_hours_or_after_thirty_six(store, clock):
+    _talk(store, clock, NOW - 6 * H, FOUR)
+    assert checkins.candidates(store, cfg(), NOW) == []
+    assert [c.reason for c in checkins.candidates(store, cfg(), NOW + 7 * H)] == ["followup"]
+    assert "followup" not in [c.reason for c in checkins.candidates(store, cfg(), NOW + 31 * H)]
+
+
+def test_followup_counts_user_turns_within_one_idle_period(store, clock):
+    _talk(store, clock, NOW - 22 * H, FOUR[:2])
+    _talk(store, clock, NOW - 20 * H, FOUR[2:])  # two separate short talks, 2 h apart
+    assert checkins.candidates(store, cfg(), NOW) == []
+
+
+def test_care_after_a_long_quiet_stretch(store, clock):
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    store.add_assignment("challenge", "send one line before going quiet", None)
+    cands = checkins.candidates(store, cfg(), NOW)
+    assert [c.reason for c in cands] == ["care"] and cands[0].prio == 5
+    ctx = cands[0].context
+    assert "stop going quiet on Riley" in ctx          # their goal
+    assert "telling Jo about the move" in ctx          # the last conversation
+    assert "send one line before going quiet" in ctx   # open assignments
+    assert checkins.maybe_send(store, cfg(), NOW, fake()) is True
+    # once per silence: an unanswered care check-in is not followed by another
+    assert checkins.candidates(store, cfg(), NOW + 2 * H) == []
+    assert checkins.candidates(store, cfg(), NOW + 37 * H) == []
+
+
+def test_care_not_inside_36h_nor_when_another_reason_exists(store, clock):
+    _talk(store, clock, NOW - 30 * H, FOUR[:1])
+    assert checkins.candidates(store, cfg(), NOW) == []
+    store.add_signal(7, "bid", "Jo sent a photo from the old street", NOW - H)
+    assert [c.reason for c in checkins.candidates(store, cfg(), NOW + 10 * H)] == ["signal:bid"]
+
+
+def test_care_not_on_a_fresh_install(store):
+    assert checkins.candidates(store, cfg(), NOW) == []
+
+
+def test_generic_care_is_retired_for_that_stretch(store, clock):
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    assert checkins.maybe_send(store, cfg(), NOW,
+                               fake(verdict={"generic": True, "why": "filler"})) is False
+    assert checkins.candidates(store, cfg(), NOW + D) == []
+
+
+# ---- v0.1.4: the prompts -------------------------------------------------------
+
+FOLLOWUP_GOOD = ("Last night you were stuck between telling her now or waiting until after the "
+                 "weekend. Where did you land?")
+FILLER = "Hey, just checking in, how are you?"
+
+
+def test_coach_prompt_knows_it_can_text_first():
+    coach_md = (PROMPTS / "coach.md").read_text(encoding="utf-8")
+    flat = " ".join(coach_md.split())
+    assert "# Texting first" in coach_md and "text them first" in flat
+    for needle in ("check-in limit", "quiet hours", "intent: check in", "Never promise an exact"):
+        assert needle in flat
+
+
+def test_checkin_prompt_has_followup_and_care_and_leans_toward_sending():
+    flat = " ".join(DRAFT_SYS.split())
+    for needle in ("followup", "care", FOLLOWUP_GOOD, "sending is the default",
+                   "Thinking of you", "specific or silent", "YYYY-MM-DD HH:MM"):
+        assert needle in flat
+    bad = flat.split("Bad (never send these)", 1)[1]
+    assert FILLER in bad
+
+
+def test_generic_test_prompt_passes_warm_specific_and_fails_filler():
+    flat = " ".join(TEST_SYS.split())
+    assert FOLLOWUP_GOOD in flat.split("Not generic", 1)[1]
+    assert FILLER in flat.split("Always generic", 1)[1]
+
+
+# ---- v0.1.4 fix round 1 --------------------------------------------------------
+
+def _crisis_talk(store, clock, start):
+    t = start
+    for i, line in enumerate(FOUR):
+        clock.t = t
+        store.add_turn("user", line)
+        clock.t = t + timedelta(minutes=1)
+        store.add_turn("coach", f"(reply {i})", "crisis" if i == 2 else "struggling")
+        t += timedelta(minutes=3)
+    clock.t = NOW
+
+
+def test_followup_from_a_crisis_conversation_says_so(store, clock):
+    _crisis_talk(store, clock, NOW - 30 * H)  # the 24 h episode is over
+    cands = checkins.candidates(store, cfg(), NOW)
+    assert [c.reason for c in cands] == ["followup"]
+    assert "included a crisis moment; the episode is over" in cands[0].context
+    assert "tilia [crisis]" in cands[0].context  # state markers survive in the context
+    calls = []
+    checkins.maybe_send(store, cfg(), NOW, fake(calls=calls))
+    assert "included a crisis moment" in calls[1][1]  # the judge is told too
+
+
+def test_recent_crisis_episode_marks_any_candidate(store, clock):
+    store.set_meta("crisis_last", (NOW - 50 * H).isoformat())
+    due_challenge(store)
+    c = checkins.candidates(store, cfg(), NOW)[0]
+    assert "crisis moment" in c.context
+    store.set_meta("crisis_last", (NOW - 100 * H).isoformat())
+    assert "crisis moment" not in checkins.candidates(store, cfg(), NOW)[0].context
+
+
+def test_care_after_a_crisis_says_so(store, clock):
+    _crisis_talk(store, clock, NOW - 40 * H)
+    c = checkins.candidates(store, cfg(), NOW)
+    assert [x.reason for x in c] == ["care"] and "crisis moment" in c[0].context
+
+
+def test_active_crisis_still_blocks_followup(store, clock):
+    _crisis_talk(store, clock, NOW - 20 * H)
+    store.set_meta("crisis_last", (NOW - 20 * H).isoformat())
+    assert checkins.maybe_send(store, cfg(), NOW, no_claude) is False
+
+
+def test_checkin_prompt_has_the_crisis_rule():
+    flat = " ".join(DRAFT_SYS.split())
+    rule = flat.split("# Read their state first", 1)[1].split("# What makes them", 1)[0]
+    for needle in ("`crisis`", "Never about the crisis", "140", "slept", "silence"):
+        assert needle in rule
+    assert "override sending-by-default" in rule
+    judge = " ".join(TEST_SYS.split())
+    assert "crisis moment" in judge
+
+
+def test_unanswered_care_is_not_followed_by_another(store, clock):
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    assert checkins.maybe_send(store, cfg(), NOW, fake()) is True
+    for days in (2, 4, 8):
+        assert checkins.candidates(store, cfg(), NOW + days * D) == []
+    clock.t = NOW + 5 * D
+    store.add_turn("user", "sorry, rough week")
+    clock.t = NOW
+    assert [c.reason for c in checkins.candidates(store, cfg(), NOW + 7 * D)] == ["care"]
+
+
+def test_care_waits_for_36h_after_any_turn(store, clock):
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    clock.t = NOW - 10 * H
+    store.add_checkin("intent", "How did the talk with Jo go?", True)
+    store.add_turn("coach", "How did the talk with Jo go?")
+    clock.t = NOW
+    assert checkins.candidates(store, cfg(), NOW) == []
+    assert [c.reason for c in checkins.candidates(store, cfg(), NOW + 27 * H)] == ["care"]
+
+
+def test_care_silence_is_final_and_tried_reasons_block_care(store, clock):
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    quiet = fake(draft={"message": None, "not_before": None, "why": "nothing concrete"})
+    assert checkins.maybe_send(store, cfg(), NOW, quiet) is False
+    assert checkins.candidates(store, cfg(), NOW + 3 * D) == []
+    # a stronger reason that chose silence today still counts: care doesn't fill in for it
+
+
+def test_care_does_not_fill_in_for_a_tried_reason(store, clock):
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    store.add_signal(7, "bid", "Jo sent a photo from the old street", NOW - H)
+    quiet = fake(draft={"message": None, "not_before": None, "why": "not today"})
+    assert checkins.maybe_send(store, cfg(), NOW, quiet) is False
+    assert checkins.candidates(store, cfg(), NOW + H) == []
+
+
+def test_intent_context_names_quiet_hours(store):
+    store.add_signal(0, "intent", "check on me tonight", NOW - H)
+    ctx = checkins.candidates(store, cfg(quiet_start=22, quiet_end=9), NOW)[0].context
+    assert "quiet hours are 22:00-09:00" in ctx

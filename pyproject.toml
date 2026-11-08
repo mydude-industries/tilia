@@ -1,6 +1,6 @@
 [project]
 name = "tilia"
-version = "0.1.0"
+version = "0.1.4"
 description = "A private Telegram coach that runs on your own Mac."
 readme = "README.md"
 license = { text = "MIT" }

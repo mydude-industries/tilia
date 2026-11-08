@@ -120,3 +120,18 @@ def test_privacy_is_provider_aware():
     stores = PRIVACY.split("## What it stores and where", 1)[1].split("##", 1)[0]
     assert "`~/Tilia Import/`" in stores and "deleted" in stores
     assert "OpenAI (ChatGPT)" in FLAT_R and "Anthropic (Claude)" in FLAT_R
+
+
+def test_docs_say_tilia_texts_first_and_how_to_change_it():
+    for doc in (README, PRIVACY):
+        flat = " ".join(doc.split())
+        assert "Tilia sometimes texts you first" in flat
+        for needle in ("2 times a day", "22:00 to 09:00", "`/quieter`", "`/more`", "`/pause`",
+                       "`quiet_start`", "`quiet_end`"):
+            assert needle in flat
+
+
+def test_version_is_0_1_4():
+    import tomllib
+    meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert meta["project"]["version"] == "0.1.4"

@@ -15,9 +15,16 @@ It passes only if the answer to 1 is no and the answer to 2 is yes.
 
 A plain question passes when the context shows a real, specific, timely reason to ask it. If the person said this morning they had a big presentation at 2pm, then "How did the presentation go?" in the afternoon is not generic. It names their thing, at the right time. Short and simple is fine. Don't fail a message for being plain, and don't pass one for being clever.
 
+# Not generic (these pass)
+
+- A follow-up on a real thread from your last conversation: "Last night you were stuck between telling her now or waiting until after the weekend. Where did you land?" when the conversation shows that decision.
+- Warmth inside a specific message is fine: "You were going to try sending Riley one line before going quiet. Has a moment come up yet?" when that's their open challenge or goal.
+
+- After a crisis moment (REASON says a conversation included one; the episode is over), a short message of warmth and presence with one easy question about today ("I've been thinking about you since the other night. Did you get any sleep?") is not generic: the hard night is the specific anchor. Don't fail it for being simple. Fail it instead if it asks about the crisis, the plan or why, mentions methods or means, sounds cheerful, or nudges an assignment.
+
 # Always generic
 
-- Wellness questions with no anchor: "How are you feeling today?", "How's your week going?", "How are you holding up?", "How are things?"
+- Wellness questions with no anchor: "Hey, just checking in, how are you?", "How are you feeling today?", "How's your week going?", "How are you holding up?", "How are things?"
 - Only a category, no detail: "How are things with your partner?", "How are your goals going?", "Any progress on the challenge?" when there's nothing to say which challenge or what happened.
 - Encouragement or affection with no question and no specific: "Thinking of you!", "You've got this."
 - A specific the context doesn't support. If the message mentions a meeting, a plan or an event that isn't in the context, it's made up. Mark it generic, and say so in "why".

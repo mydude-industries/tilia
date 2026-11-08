@@ -46,6 +46,8 @@ and your profile. It leaves out the copied text messages, the check-ins,
 the signals Tilia worked out from your texts, and your corrections. Those are
 stored, but not in the export.
 
+Tilia sometimes texts you first, when it has something real to ask about: at most 2 times a day by default, never during quiet hours (22:00 to 09:00 by default) and never in the middle of a conversation. In Telegram, send `/quieter` or `/more` to change how many, or `/pause` to stop them for a while; quiet hours are `quiet_start` and `quiet_end` (hours, 0 to 23) in `config.toml`. A check-in is stored in `tilia.db` like any other message.
+
 ## Who can see it
 
 **You.** It is your Mac and your files.
