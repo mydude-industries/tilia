@@ -1,6 +1,6 @@
 {
   "type": "check_story",
-  "v": 1,
+  "v": 2,
   "title": "Check the story",
   "pitch": "About 3 minutes. It pulls apart what happened from the story you told yourself, because the story is usually the part that hurts, and it's rarely the only one that fits.",
   "cards": [
@@ -29,7 +29,14 @@
       "prompt": "What happened? Just the facts, like a camera would see it.",
       "why": "Writing just the facts gives you solid ground before any meaning gets added.",
       "personal": false,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "starter",
+      "options": [
+        "They said…",
+        "I walked in and…",
+        "It started when…",
+        "Then…"
+      ]
     },
     {
       "id": "story",
@@ -38,69 +45,54 @@
       "prompt": "What did you tell yourself it meant?",
       "why": "Once the story is in words, it's something you can question instead of only feel.",
       "personal": true,
-      "max_chars": 300
-    },
-    {
-      "id": "sure",
-      "kind": "slider",
-      "short": "how sure",
-      "prompt": "How sure are you that story is true?",
-      "why": "Rating it shows how much of the hurt is resting on a guess.",
-      "personal": false,
-      "min": 0,
-      "max": 100,
-      "labels": [
-        "Not at all",
-        "Completely"
+      "max_chars": 300,
+      "option_mode": "answer",
+      "options": [
+        "They're upset with me",
+        "I messed up again",
+        "I don't matter to them",
+        "This is going to end badly",
+        "They'd rather be somewhere else"
       ]
     },
     {
       "id": "evidence",
       "kind": "text",
-      "short": "evidence for and against",
-      "prompt": "What supports the story, and what doesn't?",
+      "short": "what fits and what doesn't",
+      "prompt": "What fits that story, and what doesn't?",
       "why": "Weighing both sides lets the facts decide how true it is, not the feeling.",
-      "personal": false,
-      "max_chars": 400
-    },
-    {
-      "id": "other_reads",
-      "kind": "chips",
-      "short": "other reads",
-      "prompt": "Which of these could also be part of it?",
-      "why": "Seeing other options loosens the grip of the first story.",
       "personal": true,
-      "chips": [
-        "They were stressed",
-        "I missed something",
-        "It was about them",
-        "It was a bad moment",
-        "I don't know yet"
-      ],
-      "multi": true
+      "max_chars": 300,
+      "option_mode": "answer",
+      "options": [
+        "Nothing really, it's just a feeling",
+        "They did seem off, but not at me",
+        "They've had a hard week",
+        "Some of it fits, some doesn't",
+        "I'm not sure yet"
+      ]
     },
     {
       "id": "other_way",
       "kind": "text",
       "short": "another way to read it",
-      "prompt": "What is another way to read what happened?",
+      "prompt": "If a friend told you this, what else might it mean?",
       "why": "A second reading gives you a choice in how you respond.",
       "personal": true,
-      "max_chars": 300
-    },
-    {
-      "id": "friend",
-      "kind": "text",
-      "short": "what I'd tell a friend",
-      "prompt": "If a friend told you this, what would you say to them?",
-      "why": "It lets you borrow the kindness you already give the people you love.",
-      "personal": false,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "answer",
+      "options": [
+        "They might be tired or stressed",
+        "It might be about their day, not me",
+        "I might be missing part of the picture",
+        "It was one bad moment, not the whole story",
+        "I don't know yet, and I can ask"
+      ]
     },
     {
       "id": "mood_end",
       "kind": "mood",
-      "short": "feeling",
+      "short": "feeling now",
       "prompt": "How do you feel right now?",
       "why": "Comparing with the start shows you what these few minutes did.",
       "personal": false,

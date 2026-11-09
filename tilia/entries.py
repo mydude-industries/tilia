@@ -31,6 +31,14 @@ WHY_MAX = 140
 TEXT_MAX = 600
 TOTAL_TEXT_MAX = 1800
 COMPACT_MAX = 1500
+# R24: every text card offers 3-5 taps. "answer" taps are likely answers (tapping one is an
+# answer, still editable); "starter" taps begin their own sentence and end with "…".
+OPTION_MODES = ("answer", "starter")
+OPTION_MAX = 80
+OPTIONS_MIN, OPTIONS_MAX = 3, 5
+ELLIPSIS = "…"
+STARTER_WORDS = 4  # R25: a starter is the first few words only, never what happened
+WORDING_BYTES = 1800  # the personalized wording as compact UTF-8 JSON, before base64
 _ID = re.compile(r"[A-Za-z0-9_-]{12}")
 _CARD_ID = re.compile(r"[a-z0-9_]+")
 
@@ -43,8 +51,9 @@ def _check_sheet(type_: str, sheet) -> None:
     def bad(msg):
         raise ValueError(f"sheet {type_}: {msg}")
 
-    if not isinstance(sheet, dict) or sheet.get("type") != type_ or sheet.get("v") != 1:
-        bad("needs type matching its file name and v 1")
+    if (not isinstance(sheet, dict) or sheet.get("type") != type_ or not _int(sheet.get("v"))
+            or sheet["v"] < 1):
+        bad("needs type matching its file name and a version v of 1 or more")
     for k in ("title", "pitch"):
         if not isinstance(sheet.get(k), str) or not sheet[k].strip():
             bad(f"needs a {k}")
@@ -84,6 +93,13 @@ def _check_sheet(type_: str, sheet) -> None:
             if not _int(m) or not 1 <= m <= TEXT_MAX:
                 bad(f"card {cid} needs max_chars up to {TEXT_MAX}")
             total += m
+            mode = c.get("option_mode")
+            opts = _options(c.get("options"), mode)
+            if mode not in OPTION_MODES or opts is None or opts != c["options"]:
+                bad(f"card {cid} needs {OPTIONS_MIN}-{OPTIONS_MAX} one-line options of up to "
+                    f"{OPTION_MAX} characters and an option_mode; starters end with {ELLIPSIS}")
+        elif "options" in c or "option_mode" in c:
+            bad(f"card {cid}: only text cards take options")
         elif kind == "slider":
             lab = c.get("labels")
             if (not _int(c.get("min")) or not _int(c.get("max")) or c["min"] >= c["max"]
@@ -151,6 +167,22 @@ def _one(card: dict, a):
     return None
 
 
+def fits(sheet: dict, answers) -> bool:
+    """True when stored answers pair with this sheet's cards, one for one and kind for kind
+    (as validate_answers leaves them). An entry answered against an older version of a sheet
+    may not: its words are then shown on their own, never under the wrong question."""
+    cards = answer_cards(sheet)
+    if not isinstance(answers, list) or len(answers) != len(cards):
+        return False
+    for c, a in zip(cards, answers):
+        kind = c["kind"]
+        ok = (isinstance(a, str) if kind == "text" else isinstance(a, list) if kind == "chips"
+              else a is None or _int(a) if kind in ("mood", "slider") else a is None)
+        if not ok:
+            return False
+    return True
+
+
 def validate_answers(sheet: dict, answers) -> list | None:
     cards = answer_cards(sheet)
     if not isinstance(answers, list) or len(answers) != len(cards):
@@ -159,6 +191,8 @@ def validate_answers(sheet: dict, answers) -> list | None:
 
 
 def moods(sheet: dict, answers) -> tuple[int | None, int | None]:
+    if not fits(sheet, answers):  # positions can't be trusted: see unpaired_moods
+        return None, None
     vals = [a for c, a in zip(answer_cards(sheet), answers) if c["kind"] == "mood"]
     if not vals:
         return None, None
@@ -167,8 +201,11 @@ def moods(sheet: dict, answers) -> tuple[int | None, int | None]:
 
 
 def compact(sheet: dict, answers) -> str:
-    parts = []
-    for c, a in zip(answer_cards(sheet), answers):
+    paired = fits(sheet, answers)
+    parts = [] if paired else [  # answered against an older sheet: the words alone
+        ", ".join(map(str, a)) if isinstance(a, list) else a
+        for a in answers or [] if isinstance(a, (str, list)) and a]
+    for c, a in zip(answer_cards(sheet), answers) if paired else ():
         if c["kind"] in ("mood", "reveal") or a in (None, "", []):
             continue
         parts.append(f"{c['short']}: {', '.join(a) if isinstance(a, list) else a}")
@@ -186,21 +223,93 @@ def _line(s) -> str | None:
     return None
 
 
+def _options(raw, mode) -> list | None:
+    """3-5 distinct one-line options of up to OPTION_MAX characters; for "starter", each
+    ends with an ellipsis ("..." becomes "…"). None if any one fails."""
+    if not isinstance(raw, list) or not OPTIONS_MIN <= len(raw) <= OPTIONS_MAX:
+        return None
+    out = []
+    for o in raw:
+        o = _line(o)
+        if o is None or len(o) > OPTION_MAX or o in out:
+            return None
+        if mode == "starter":
+            if o.endswith("..."):
+                o = o[:-3].rstrip() + ELLIPSIS
+            if (not o.endswith(ELLIPSIS) or len(o) < 2
+                    or len(o[:-1].split()) > STARTER_WORDS):
+                return None
+        out.append(o)
+    return out
+
+
+def _size(wording: dict) -> int:
+    return len(json.dumps(wording, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
 def clean_wording(sheet: dict, raw) -> dict | None:
+    """Tilia's wording for one entry, kept only where it is safe to show: the pitch, the
+    prompts of personal cards, and tap options for personal text cards (starters only on
+    starter cards). Options go first, last card first, if the whole is over WORDING_BYTES."""
     if not isinstance(raw, dict):
         return None
     out: dict = {}
     pitch = _line(raw.get("pitch"))
     if pitch:
         out["pitch"] = pitch
+    personal = {c["id"]: c for c in sheet["cards"] if c.get("personal")}
     prompts = raw.get("prompts")
     if isinstance(prompts, dict):
-        personal = {c["id"] for c in sheet["cards"] if c.get("personal")}
         kept = {k: v for k, v in ((k, _line(v)) for k, v in prompts.items())
                 if k in personal and v}
         if kept:
             out["prompts"] = kept
+    options = raw.get("options")
+    if isinstance(options, dict):
+        kept = {}
+        for c in sheet["cards"]:  # in card order, so the size cut drops the last ones
+            # R25: only answer cards are tailored; a starter card's starters stay generic
+            if (c["id"] in personal and c.get("kind") == "text"
+                    and c.get("option_mode") == "answer" and c["id"] in options):
+                o = _options(options[c["id"]], "answer")
+                if o:
+                    kept[c["id"]] = o
+        if kept:
+            out["options"] = kept
+    # The whole wording fits WORDING_BYTES: taps go first, then prompts, last card first.
+    for key in ("options", "prompts"):
+        part = out.get(key)
+        if part is None:
+            continue
+        ordered = [c["id"] for c in sheet["cards"] if c["id"] in part]
+        while ordered and _size(out) > WORDING_BYTES:
+            part.pop(ordered.pop())
+        if not part:
+            del out[key]
     return out or None
+
+
+def unpaired(raw) -> list | None:
+    """R26: answers that don't pair with the current sheet (a page opened before the sheet
+    changed), kept as they came but bounded: strings trimmed and cut to TEXT_MAX, lists of
+    up to 8 such strings, whole numbers; anything else becomes None. None if not a list."""
+    if not isinstance(raw, list):
+        return None
+
+    def one(a):
+        if isinstance(a, str):
+            return a.strip()[:TEXT_MAX]
+        if isinstance(a, list):
+            return [x.strip()[:TEXT_MAX] for x in a if isinstance(x, str) and x.strip()][:8]
+        return a if _int(a) else None
+    return [one(a) for a in raw]
+
+
+def unpaired_moods(answers: list) -> tuple[int | None, int | None]:
+    """Every sheet version opens and closes with a 0-10 feeling card, so the first and
+    last answers are the feelings even when nothing else pairs."""
+    ok = lambda x: x if _int(x) and 0 <= x <= 10 else None  # noqa: E731
+    return (ok(answers[0]), ok(answers[-1])) if answers else (None, None)
 
 
 def new_token() -> str:

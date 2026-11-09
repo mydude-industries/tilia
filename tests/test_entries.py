@@ -104,7 +104,8 @@ def _base():
             "why": "It shows what moved.", "personal": False, "min": 0, "max": 10}
     mood2 = dict(mood, id="m2")
     text = {"id": "t", "kind": "text", "short": "what", "prompt": "What?",
-            "why": "It gets it out.", "personal": False, "max_chars": 100}
+            "why": "It gets it out.", "personal": False, "max_chars": 100,
+            "options": ["It was late", "Nothing much", "I'm not sure"], "option_mode": "answer"}
     return pitch, mood, text, mood2
 
 
@@ -116,10 +117,74 @@ def test_load_sheet_rejects_bad(tmp_path, monkeypatch):
         [pitch, mood, dict(text, kind="nope"), mood2],
         [pitch, mood, {k: v for k, v in text.items() if k != "why"}, mood2],
         [text, mood, mood2],
+        # R24: every text card carries 3-5 one-line tap options and a mode
+        [pitch, mood, {k: v for k, v in text.items() if k != "options"}, mood2],
+        [pitch, mood, {k: v for k, v in text.items() if k != "option_mode"}, mood2],
+        [pitch, mood, dict(text, options=["a", "b"]), mood2],
+        [pitch, mood, dict(text, options=["a", "b", "c", "d", "e", "f"]), mood2],
+        [pitch, mood, dict(text, options=["a", "b", "x" * 81]), mood2],
+        [pitch, mood, dict(text, options=["a", "b", "c\nd"]), mood2],
+        [pitch, mood, dict(text, options=["a", "b", " "]), mood2],
+        [pitch, mood, dict(text, options=["a", "a", "b"]), mood2],
+        [pitch, mood, dict(text, option_mode="guess"), mood2],
+        # a starter is the start of their own sentence: it ends with an ellipsis
+        [pitch, mood, dict(text, option_mode="starter",
+                           options=["They said…", "I walked in and…", "It started"]), mood2],
     ):
         _write(tmp_path, monkeypatch, bad)
         with pytest.raises(ValueError):
             entries.load_sheet("check_story")
+
+
+def test_sheet_version_is_a_positive_int(tmp_path, monkeypatch):
+    pitch, mood, text, mood2 = _base()
+    _write(tmp_path, monkeypatch, [pitch, mood, text, mood2], v=2)
+    assert entries.load_sheet("check_story")["v"] == 2
+    for v in (0, "2", True, None):
+        _write(tmp_path, monkeypatch, [pitch, mood, text, mood2], v=v)
+        with pytest.raises(ValueError):
+            entries.load_sheet("check_story")
+
+
+def test_starter_card_accepted(tmp_path, monkeypatch):
+    pitch, mood, text, mood2 = _base()
+    starter = dict(text, option_mode="starter",
+                   options=["They said…", "I walked in and…", "It started when…"])
+    _write(tmp_path, monkeypatch, [pitch, mood, starter, mood2])
+    assert entries.load_sheet("check_story")["cards"][2]["option_mode"] == "starter"
+
+
+@pytest.mark.parametrize("type_", entries.TYPES)
+def test_every_text_card_is_tap_first(type_):
+    """R24: no text card asks for typing alone; each offers 3-5 short taps."""
+    sheet = entries.load_sheet(type_)
+    assert sheet["v"] >= 2  # every sheet changed in Task 17
+    for c in sheet["cards"]:
+        if c["kind"] != "text":
+            assert "options" not in c and "option_mode" not in c, c["id"]
+            continue
+        opts = c["options"]
+        assert 3 <= len(opts) <= 5 and len(set(opts)) == len(opts), c["id"]
+        assert all(1 <= len(o) <= entries.OPTION_MAX and "\n" not in o for o in opts)
+        assert c["option_mode"] in ("answer", "starter")
+        if c["option_mode"] == "starter":
+            assert all(o.endswith("…") for o in opts), c["id"]
+
+
+@pytest.mark.parametrize("type_,card", [("check_story", "happened"), ("week_back", "hard")])
+def test_what_happened_cards_offer_starters_only(type_, card):
+    """Tilia never puts words in their mouth about what happened: sentence starters only."""
+    [c] = [c for c in entries.load_sheet(type_)["cards"] if c["id"] == card]
+    assert c["option_mode"] == "starter"
+
+
+@pytest.mark.parametrize("type_", CBT_TYPES)
+def test_cbt_sheets_are_short(type_):
+    """R24: 5-6 cards in all, pitch and both feeling cards included (check_story keeps
+    its evidence card: 7)."""
+    cards = entries.load_sheet(type_)["cards"]
+    assert 5 <= len(cards) <= (7 if type_ == "check_story" else 6)
+    assert [c["kind"] for c in cards][:2] == ["pitch", "mood"] and cards[-1]["kind"] == "mood"
 
 
 def test_available_types_follows_dir(tmp_path, monkeypatch):
@@ -190,6 +255,132 @@ def test_clean_wording():
     assert entries.clean_wording(s, {"pitch": "a\nb", "prompts": {"a": "x"}}) == {"prompts": {"a": "x"}}
     assert entries.clean_wording(s, {"pitch": "a\nb", "prompts": {"a": "x" * 201, "b": "y"}}) is None
     assert entries.clean_wording(s, "junk") is None
+
+
+OPTS = ["Riley might have been tired", "It was about the dinner, not me", "I don't know yet"]
+STARTS = ["When Riley got home…", "At dinner she…", "It started when…"]
+
+
+def _optsheet():
+    return {"cards": [
+        {"id": "a", "kind": "text", "personal": True, "option_mode": "answer"},
+        {"id": "h", "kind": "text", "personal": True, "option_mode": "starter"},
+        {"id": "b", "kind": "text", "personal": False, "option_mode": "answer"},
+        {"id": "c", "kind": "chips", "personal": True}]}
+
+
+def test_clean_wording_keeps_good_options():
+    s = _optsheet()
+    assert entries.clean_wording(s, {"options": {"a": OPTS}}) == {"options": {"a": OPTS}}
+    # a non-personal card, a chips card and an unknown id never get options
+    out = entries.clean_wording(s, {"options": {"b": OPTS, "c": OPTS, "zz": OPTS, "a": OPTS}})
+    assert out == {"options": {"a": OPTS}}
+
+
+@pytest.mark.parametrize("bad", [
+    OPTS[:2],                                   # too few
+    OPTS + ["d", "e", "f"],                     # too many
+    OPTS[:2] + ["x" * 81],                      # too long
+    OPTS[:2] + ["two\nlines"],                  # not one line
+    OPTS[:2] + [7],                             # not text
+    "Riley might have been tired",              # not a list
+    [OPTS[0], OPTS[0], OPTS[1]],                # repeats
+])
+def test_clean_wording_drops_bad_options(bad):
+    assert entries.clean_wording(_optsheet(), {"options": {"a": bad}}) is None
+
+
+def test_clean_wording_never_tailors_starters():
+    """R25: a what-happened card's starters are fixed and generic. Tilia never offers its
+    own version of what happened, not even as the start of a sentence."""
+    for tailored in (STARTS, ["Riley ignored you", "She was angry", "You said it wrong"],
+                     ["It started when…", "Then…", "They said…"]):
+        assert entries.clean_wording(_optsheet(), {"options": {"h": tailored}}) is None
+    out = entries.clean_wording(_optsheet(), {"options": {"h": STARTS, "a": OPTS}})
+    assert out == {"options": {"a": OPTS}}
+
+
+@pytest.mark.parametrize("type_", entries.TYPES)
+def test_starters_are_short_and_generic(type_):
+    """At most 4 words before the ellipsis: room to begin, nothing said for them."""
+    for c in entries.load_sheet(type_)["cards"]:
+        if c.get("option_mode") == "starter":
+            for o in c["options"]:
+                assert len(o[:-1].split()) <= entries.STARTER_WORDS, (c["id"], o)
+
+
+def test_load_sheet_rejects_long_starter(tmp_path, monkeypatch):
+    pitch, mood, text, mood2 = _base()
+    long = dict(text, option_mode="starter",
+                options=["They said…", "I walked in and…", "When Riley got home from work…"])
+    _write(tmp_path, monkeypatch, [pitch, mood, long, mood2])
+    with pytest.raises(ValueError):
+        entries.load_sheet("check_story")
+
+
+def test_check_story_facts_prompt_is_never_reworded():
+    sheet = entries.load_sheet("check_story")
+    [c] = [c for c in sheet["cards"] if c["id"] == "happened"]
+    assert c["personal"] is False and c["option_mode"] == "starter"
+    assert c["options"] == ["They said…", "I walked in and…", "It started when…", "Then…"]
+    [ev] = [c for c in sheet["cards"] if c["id"] == "evidence"]
+    assert ev["prompt"] == "What fits that story, and what doesn't?"
+    assert ev["option_mode"] == "answer"
+
+
+def test_clean_wording_keeps_the_fragment_small():
+    """The whole wording fits WORDING_BYTES: taps go first (last card first), then
+    personalized prompts (last card first); the pitch stays."""
+    long = [("é" * 79) + str(n) for n in range(5)]
+    sheet = {"cards": [{"id": f"c{n}", "kind": "text", "personal": True, "option_mode": "answer"}
+                       for n in range(8)]}
+    raw = {"pitch": "p" * 200, "prompts": {f"c{n}": "q" * 200 for n in range(3)},
+           "options": {f"c{n}": long for n in range(8)}}
+    out = entries.clean_wording(sheet, raw)
+    size = len(json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode())
+    assert size <= entries.WORDING_BYTES
+    assert out["pitch"] == "p" * 200 and len(out["prompts"]) == 3  # wording before taps
+    assert 0 < len(out["options"]) < 8
+    assert list(out["options"]) == [f"c{n}" for n in range(len(out["options"]))]
+    # prompts alone over the cap: they go too, last first, and the pitch stays
+    raw = {"pitch": "😀" * 200, "prompts": {f"c{n}": "é" * 200 for n in range(8)},
+           "options": {"c0": long}}
+    out = entries.clean_wording(sheet, raw)
+    assert "options" not in out and out["pitch"] == "😀" * 200
+    assert list(out["prompts"]) == [f"c{n}" for n in range(len(out["prompts"]))]
+    assert len(json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode()) \
+        <= entries.WORDING_BYTES
+
+
+def test_fits_pairs_only_matching_answers():
+    s = _sheet()
+    assert entries.fits(s, [3, "hi", ["a"], 50, 6])
+    assert entries.fits(s, [None, "", [], None, None])
+    assert not entries.fits(s, [3, "hi", ["a"], 50])          # wrong count
+    assert not entries.fits(s, [3, ["a"], "hi", 50, 6])       # same count, wrong kinds
+    assert not entries.fits(s, [3, "hi", ["a"], "50", 6])
+    assert not entries.fits(s, None)
+
+
+def test_compact_old_answers_against_new_sheet():
+    """An answer stored against an older sheet never lands under the wrong question."""
+    out = entries.compact(_sheet(), [3, ["a"], "he left", 50, 6])
+    assert out.startswith("[check the story] ") and "what happened" not in out
+    assert "he left" in out and "a" in out
+
+
+def test_unpaired_keeps_their_words():
+    """R26: answers that don't pair with the current sheet are kept, bounded, unpaired."""
+    sheet = _sheet()  # 5 answer cards
+    raw = [3, "  he left  ", 70, ["a", " b ", 7], "x" * 5000, None, True, {"k": 1}, 6.5, 6]
+    out = entries.unpaired(raw)
+    assert out == [3, "he left", 70, ["a", "b"], "x" * entries.TEXT_MAX, None, None, None,
+                   None, 6]
+    assert not entries.fits(sheet, out)
+    assert entries.moods(sheet, out) == (None, None)  # positions aren't trusted
+    assert entries.unpaired_moods(out) == (3, 6)
+    assert entries.unpaired_moods([11, "x", -1]) == (None, None)
+    assert entries.unpaired("nope") is None
 
 
 def test_tokens():

@@ -46,6 +46,18 @@
     return null;
   }
 
+  function isEmpty(a) {
+    return a === null || (typeof a === "string" && !a.trim()) || (Array.isArray(a) && !a.length);
+  }
+
+  // The opening feeling, if they gave one: the first mood card's answer.
+  function firstMood() {
+    for (var n = 0; n < asked.length; n++) {
+      if (asked[n].kind === "mood") return typeof answers[n] === "number" ? answers[n] : null;
+    }
+    return null;
+  }
+
   function answerIndex(card) {
     return asked.indexOf(card);
   }
@@ -85,7 +97,7 @@
 
   function saveDraft() {
     var key = C.draftKey(launch.id);
-    var value = C.makeDraft(at, answers, Date.now());
+    var value = C.makeDraft(at, answers, Date.now(), asked.map(function (c) { return c.id; }));
     if (!useCloud) return local.set(key, value);
     cloudCall("setItem", [key, value], function (err) {
       if (err) local.set(key, value);
@@ -144,18 +156,15 @@
     if (useCloud) cloudCall("removeItem", [key], function () {});
   }
 
+  // R26: never lose a draft's words, even one saved before the sheet changed.
   function restore(d) {
-    if (!d || d.a.length !== asked.length) return;
-    for (var i = 0; i < asked.length; i++) {
-      var c = asked[i], a = d.a[i];
-      if (c.kind === "text" && typeof a === "string") answers[i] = a.slice(0, c.max_chars);
-      else if (c.kind === "chips" && Array.isArray(a)) {
-        answers[i] = a.filter(function (x) { return c.chips.indexOf(x) >= 0; });
-      } else if ((c.kind === "mood" || c.kind === "slider") && typeof a === "number"
-                 && a >= c.min && a <= c.max) answers[i] = Math.round(a);
-    }
-    if (C.remaining(launch, answers) < 0) answers = asked.map(emptyAnswer);
-    else if (typeof d.i === "number" && d.i > 0 && d.i < cards.length) at = d.i;
+    if (!d) return;
+    var same = (Array.isArray(d.k) && d.k.length === d.a.length) || d.a.length === asked.length;
+    var back = C.restoreAnswers(asked, d);
+    if (C.remaining(launch, back) < 0) return;
+    answers = back;
+    if (same && typeof d.i === "number" && d.i > 0 && d.i < cards.length) at = d.i;
+    else if (!same && cards.length > 1) at = 1;
   }
 
   /* ---------- the bar: Back and progress ---------- */
@@ -192,7 +201,7 @@
 
   /* ---------- inputs, one per kind ---------- */
 
-  function chipsInput(card, i) {
+  function chipsInput(card, i, changed) {
     var wrap = el("div", "chips");
     wrap.setAttribute("role", "group");
     wrap.setAttribute("aria-label", card.multi ? "Pick any that fit" : "Pick one");
@@ -216,6 +225,7 @@
         Array.prototype.forEach.call(wrap.children, function (c) {
           c.setAttribute("aria-pressed", String(next.indexOf(c.textContent) >= 0));
         });
+        changed();
         saveSoon();
       });
       wrap.appendChild(b);
@@ -228,15 +238,29 @@
     return wrap;
   }
 
-  function textInput(card, i) {
+  /* R24: a text card is tap-first. Its taps are likely answers (a tap is an answer, and
+     stays editable) or, where it asks what happened, sentence starters that begin their
+     own words. "Write my own" opens an empty box; the box shows once there is something
+     in it. */
+  function textInput(card, i, changed) {
     var wrap = el("div", "write");
+    var starter = card.option_mode === "starter";
+    var taps = el("div", "taps" + (starter ? " starters" : ""));
+    taps.setAttribute("role", "group");
+    taps.setAttribute("aria-label", starter ? "Ways to begin" : "Pick one, or write your own");
     var box = el("textarea", "box");
-    box.rows = 5;
+    box.rows = 4;
     box.maxLength = card.max_chars;
     box.value = answers[i];
     box.setAttribute("aria-label", card.short);
-    box.placeholder = "Write as much or as little as you like.";
+    box.placeholder = starter ? "Start anywhere. A few words is plenty."
+                              : "Write as much or as little as you like.";
     var left = el("p", "left");
+    var full = el("p", "hint full", "No room left for that one. Shorten an earlier answer to add it.");
+    full.hidden = true;
+    full.setAttribute("role", "status");
+    var own = el("button", "own", "Write my own");
+    own.type = "button";
     var last = box.value;
 
     function count() {
@@ -246,6 +270,59 @@
       left.textContent = n + " left";
       left.classList.toggle("low", n <= 30);
     }
+
+    function show(open) {
+      var picked = C.pickedOption(card, box.value);
+      Array.prototype.forEach.call(taps.children, function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.option === picked));
+      });
+      var visible = open || !!box.value || wrap.classList.contains("open");
+      wrap.classList.toggle("open", visible);
+      box.hidden = left.hidden = !visible;
+      count();
+      changed();
+    }
+
+    function set(value) {
+      answers[i] = last = box.value = value;
+      saveSoon();
+    }
+
+    (card.options || []).forEach(function (o) {
+      var b = el("button", "tap");
+      b.type = "button";
+      b.dataset.option = o;
+      if (starter) {  // the words, then a quiet ellipsis: their sentence carries on
+        b.appendChild(document.createTextNode(o.replace(/\u2026$/, "")));
+        b.appendChild(el("span", "more", "\u2026"));
+      } else {
+        b.textContent = o;
+      }
+      b.addEventListener("click", function () {
+        var next = C.tapOption(card, box.value, o);
+        var trial = answers.slice();
+        trial[i] = next;
+        if (next.length > card.max_chars || C.remaining(launch, trial) < 0) {
+          full.hidden = false;
+          return;
+        }
+        full.hidden = true;
+        set(next);
+        show(!!next);
+        if (starter && next) {  // straight into their own words, cursor at the end
+          box.focus();
+          box.setSelectionRange(next.length, next.length);
+        }
+      });
+      taps.appendChild(b);
+    });
+
+    own.addEventListener("click", function () {
+      if (C.pickedOption(card, box.value) !== null) set("");
+      show(true);
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    });
 
     box.addEventListener("input", function () {
       var trial = answers.slice();
@@ -266,16 +343,19 @@
       }
       last = box.value;
       answers[i] = box.value;
-      count();
+      show(false);
       saveSoon();
     });
-    count();
+    wrap.appendChild(taps);
+    wrap.appendChild(full);
+    wrap.appendChild(own);
     wrap.appendChild(box);
     wrap.appendChild(left);
+    show(false);
     return wrap;
   }
 
-  function moodInput(card, i) {
+  function moodInput(card, i, changed, was) {
     var wrap = el("div", "mood");
     var row = el("div", "scale");
     row.setAttribute("role", "radiogroup");
@@ -286,11 +366,16 @@
         b.type = "button";
         b.setAttribute("role", "radio");
         b.setAttribute("aria-checked", String(answers[i] === v));
+        if (v === was) {  // where they started, ticked under its number
+          b.classList.add("was");
+          b.setAttribute("aria-label", v + ", where you started");
+        }
         b.addEventListener("click", function () {
           answers[i] = answers[i] === v ? null : v;
           Array.prototype.forEach.call(row.children, function (c) {
             c.setAttribute("aria-checked", String(answers[i] === Number(c.textContent)));
           });
+          changed();
           saveSoon();
         });
         row.appendChild(b);
@@ -304,7 +389,7 @@
     return wrap;
   }
 
-  function sliderInput(card, i) {
+  function sliderInput(card, i, changed) {
     var wrap = el("div", "slider");
     var val = el("p", "value");
     var range = el("input", "range");
@@ -324,6 +409,7 @@
     range.addEventListener("input", function () {
       answers[i] = Number(range.value);
       show();
+      changed();
       saveSoon();
     });
     var ends = el("div", "ends");
@@ -651,18 +737,28 @@
       if (prev >= 0 && turned[at - 1]) s.appendChild(spreadCardAt(prev));
       else if (card.id === "together") s.appendChild(spreadMap("up"));
     }
-    var q = el("h1", "q", card.prompt);
+    // The closing feeling card says where they started, so it doesn't read as a repeat.
+    var was = card.kind === "mood" && i > 0 ? firstMood() : null;
+    var q = el("h1", "q", C.moodPrompt(was) || card.prompt);
     s.appendChild(q);
     if (card.why) s.appendChild(whyToggle(card));
-    if (card.kind === "chips") s.appendChild(chipsInput(card, i));
-    else if (card.kind === "text") s.appendChild(textInput(card, i));
-    else if (card.kind === "mood") s.appendChild(moodInput(card, i));
-    else if (card.kind === "slider") s.appendChild(sliderInput(card, i));
     var last = at === cards.length - 1;
     var next = el("button", "next", last ? "Send to Tilia" : "Next");
     next.type = "button";
+    // Nothing given yet: the button says Skip, and asks less of them.
+    function changed() {
+      if (last) return;
+      var empty = isEmpty(answers[i]);
+      next.textContent = empty ? "Skip" : "Next";
+      next.classList.toggle("skip", empty);
+    }
+    if (card.kind === "chips") s.appendChild(chipsInput(card, i, changed));
+    else if (card.kind === "text") s.appendChild(textInput(card, i, changed));
+    else if (card.kind === "mood") s.appendChild(moodInput(card, i, changed, was));
+    else if (card.kind === "slider") s.appendChild(sliderInput(card, i, changed));
     next.addEventListener("click", function () { if (last) send(); else go(at + 1); });
     s.appendChild(next);
+    changed();
     return s;
   }
 

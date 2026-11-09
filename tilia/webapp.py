@@ -11,7 +11,7 @@ from . import paths, telegram
 PAGES_BASE = "https://mydude-industries.github.io/tilia/"
 LABEL = "Open"
 LANG = "en"
-FRAGMENT_WORDING = True  # Task 14 records whether this stays True
+FRAGMENT_WORDING = True  # device check 2026-11-08: iPhone keeps the fragment (5,084 chars tested); Telegram Desktop not tested (falls back to generic wording)
 
 
 def tag() -> str:
@@ -19,8 +19,8 @@ def tag() -> str:
         return "v" + tomllib.load(f)["project"]["version"]
 
 
-def launch_url(type: str, token: str, *, card=None, seed=None, wording=None) -> str:
-    q = [("t", type), ("v", 1), ("id", token)]
+def launch_url(type: str, token: str, *, card=None, seed=None, wording=None, v=1) -> str:
+    q = [("t", type), ("v", v), ("id", token)]
     if card is not None:
         q.append(("card", card))
     if seed is not None:
@@ -57,6 +57,6 @@ class Offer:
 
 
 def make_offer(sheet: dict, token: str, *, card=None, seed=None, wording=None) -> Offer:
-    url = launch_url(sheet["type"], token, card=card, seed=seed, wording=wording)
+    url = launch_url(sheet["type"], token, card=card, seed=seed, wording=wording, v=sheet["v"])
     preface = wording_text(sheet, wording) if wording and not FRAGMENT_WORDING else None
     return Offer(token, url, preface or None)

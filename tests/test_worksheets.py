@@ -19,7 +19,9 @@ COACH_SYS = (PROMPTS / "coach.md").read_text(encoding="utf-8")
 FOCUS = "the Sunday dinner with Riley"
 STORY = "What did you tell yourself when Riley went quiet at Sunday dinner?"
 GOOD = {"pitch": "A few quick questions about Sunday dinner with Riley.",
-        "prompts": {"story": STORY}}
+        "prompts": {"story": STORY},
+        "options": {"story": ["She's angry with me", "I said the wrong thing again",
+                              "She'd rather not be with me"]}}
 
 
 def ws_sys():
@@ -160,6 +162,9 @@ def test_personalized_wording_kept(store):
     [(_, prompt)] = [(s, p) for s, p in calls if s == ws_sys()]
     assert coach.DATA_NOTE in prompt and profile_note in prompt and f"<focus>\n{FOCUS}\n</focus>" in prompt
     assert "story:" in prompt and "other_way:" in prompt and "happened:" not in prompt
+    # each personal reflection card shows its generic taps; starters are never sent (R25)
+    assert "answers: They're upset with me | I messed up again" in prompt
+    assert "starters" not in prompt and "They said…" not in prompt
     [e] = store.entries()
     assert e.wording == GOOD
     url = url_of(box(store)[0])
@@ -169,8 +174,10 @@ def test_personalized_wording_kept(store):
 
 @pytest.mark.parametrize("bad", [
     "not json at all",
-    {"prompts": {"happened": "What happened at Sunday dinner with Riley?"}},
+    {"prompts": {"mood_start": "How do you feel about Riley right now?"}},
     {"pitch": "x" * 300},
+    {"options": {"happened": ["Riley ignored you", "She was cold", "You were rude"]}},
+    {"prompts": {"happened": "What happened at Sunday dinner with Riley?"}},
 ])
 def test_bad_personalization_is_generic(store, bad):
     say(store, fake(ASKED, wording=bad))
@@ -178,6 +185,23 @@ def test_bad_personalization_is_generic(store, bad):
     assert e.wording is None
     items = box(store)
     assert len(items) == 1 and "#tw=" not in url_of(items[0])
+
+
+def test_worksheet_prompt_explains_options():
+    """R24: tailored taps, plain words, and only sentence starters where they tell what
+    happened."""
+    text = ws_sys()
+    assert '"options": {"<id>": [' in text and "80 characters" in text
+    assert "3 to 5" in text and "[answers: …]" in text
+    assert "starter" not in text.lower()  # R25: starters are fixed; the model never sees them
+    assert "what happened is theirs to tell" in text
+
+
+def test_offer_url_carries_sheet_version(store):
+    say(store, fake(ASKED))
+    q = dict(p.split("=", 1) for p in url_of(box(store)[0]).split("?", 1)[1]
+             .split("#", 1)[0].split("&"))
+    assert q["v"] == str(entries.load_sheet("check_story")["v"]) == "2"
 
 
 def test_personalizer_failure_is_generic(store, monkeypatch):
@@ -297,9 +321,8 @@ def test_personalizer_limit_or_login_is_generic(store, monkeypatch, err):
 
 # ---- answers come back -----------------------------------------------------
 
-ANSWERS = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong", 70,
-           "she smiled earlier", ["They were stressed", "not a chip"], "  she was tired  ",
-           "", 6]
+ANSWERS = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong",
+           "she smiled earlier", "  she was tired  ", 6]
 
 
 def payload(token, type="check_story", answers=ANSWERS, **kw):
@@ -316,7 +339,7 @@ def test_accept_ok_stores_clean_answers(store):
     assert worksheets.accept(store, NOW, payload(e.token)) == "ok"
     got = store.get_entry(e.id)
     assert got.status == "answered"
-    assert got.answers[5] == ["They were stressed"] and got.answers[6] == "she was tired"
+    assert got.answers[2] == "that I'd said something wrong" and got.answers[4] == "she was tired"
     assert (got.mood_before, got.mood_after, got.outcome) == (3, 6, 3)
     assert worksheets.reply_due(store) == [got]
     assert store.get_meta("ignored_payloads") is None
@@ -328,7 +351,7 @@ def test_accept_outcomes(store):
     assert worksheets.accept(store, NOW, payload("B" * 12)) == "unknown"
     assert store.get_meta("ignored_payloads") == "2"
     assert worksheets.accept(store, NOW, payload(e.token, type="ride_wave")) == "invalid"
-    assert worksheets.accept(store, NOW, payload(e.token, answers=[1, 2])) == "invalid"
+    assert worksheets.accept(store, NOW, payload(e.token, answers="x")) == "invalid"
     assert store.get_entry(e.id).status == "open"
     assert worksheets.accept(store, NOW, payload(e.token)) == "ok"
     assert worksheets.accept(store, NOW, payload(e.token)) == "answered"
@@ -363,7 +386,7 @@ def test_entry_prompt_shows_wording_answers_and_moods(store):
     assert body.startswith("<entry>")
     assert STORY in body  # personalized wording, as they saw it
     assert "What happened? Just the facts, like a camera would see it." in body  # generic
-    assert "Riley went quiet at Sunday dinner" in body and "They were stressed" in body
+    assert "Riley went quiet at Sunday dinner" in body and "she was tired" in body
     assert "3 → 6" in body
     assert p.index("ENTRY (what they filled out)") < p.index("NEW MESSAGES")
     assert "ENTRY (what they filled out)" not in coach.build_prompt(store, cfg(), NOW, ["hi"])
@@ -923,3 +946,52 @@ def test_spread_stance():
     assert "prompts for honest thinking, not prediction" in flat
     assert "if nothing changes" in flat.lower()
     assert '{"read": "..."}' in flat
+
+
+STORY_V1 = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong", 70,
+            "she smiled earlier", ["They were stressed"], "she was tired",
+            "it's probably not about you", 6]
+
+
+def test_old_answers_never_sit_under_new_questions(store):
+    """An entry stored against check_story v1 (before Task 17): the coach's digest, the
+    entry prompt and the compact line all give the words alone, never paired by position."""
+    e = open_entry(store)
+    store.answer_entry(e.id, STORY_V1, 3, 6)
+    e = store.get_entry(e.id)
+    line = coach.entry_line(e, "Sat 12:00")
+    assert "she smiled earlier" in line and "They were stressed" in line
+    assert "the story I told myself" not in line and "another way" not in line
+    body = coach._entry(e)
+    assert "she smiled earlier" in body and "What did you tell yourself it meant?" not in body
+    assert "3 → 6" in body
+    flat = entries.compact(entries.load_sheet("check_story"), STORY_V1)
+    assert "she smiled earlier" in flat and "what happened:" not in flat
+
+
+def test_answers_from_an_older_sheet_are_kept_unpaired(store):
+    """R26: a page opened before a sheet changed sends the old number of answers. Nothing
+    they wrote is lost: the words are kept, bounded, and shown without questions."""
+    e = open_entry(store)
+    assert worksheets.accept(store, NOW, payload(e.token, answers=STORY_V1 + ["x" * 900])) == "ok"
+    got = store.get_entry(e.id)
+    assert got.status == "answered" and (got.mood_before, got.mood_after) == (3, None)
+    assert "she smiled earlier" in got.answers and "x" * entries.TEXT_MAX in got.answers
+    assert not entries.fits(entries.load_sheet("check_story"), got.answers)
+    calls = []
+    with store.atomic():
+        worksheets.answer(store, cfg(), NOW, got, fake(coach_json("Thanks."), calls=calls))
+    [(_, prompt)] = [(s, p) for s, p in calls if s == COACH_SYS]
+    assert "she smiled earlier" in prompt and "They were stressed" in prompt
+    assert store.get_entry(e.id).status == "done"
+
+
+def test_unpaired_spread_still_names_its_cards(store, deck5):
+    ids = ".".join(c["id"] for c in entries.available_cards()[:3])
+    eid = store.add_entry("spread_three", entries.new_token(), "ask", card=ids)
+    store.answer_entry(eid, [4, None, "the river", 5], 4, 5)
+    body = coach._entry(store.get_entry(eid))
+    names = [entries.card_info(i)["name"] for i in ids.split(".")]
+    for pos, name in zip(entries.SPREADS["spread_three"], names):
+        assert f"{pos}: {name}" in body
+    assert "the river" in body

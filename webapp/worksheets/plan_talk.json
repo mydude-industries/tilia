@@ -1,14 +1,14 @@
 {
   "type": "plan_talk",
-  "v": 1,
+  "v": 2,
   "title": "Plan the talk",
-  "pitch": "About 4 minutes. A hard talk tends to end the way it starts, so this helps you plan a soft opening, the one thing you want heard, and how to pause before it turns into a fight.",
+  "pitch": "About 3 minutes. A hard talk tends to end the way it starts, so this helps you plan a soft opening, the one thing you want heard, and how to pause before it turns into a fight.",
   "cards": [
     {
       "id": "pitch",
       "kind": "pitch",
       "short": "start",
-      "prompt": "About 4 minutes. A hard talk tends to end the way it starts, so this helps you plan a soft opening, the one thing you want heard, and how to pause before it turns into a fight.",
+      "prompt": "About 3 minutes. A hard talk tends to end the way it starts, so this helps you plan a soft opening, the one thing you want heard, and how to pause before it turns into a fight.",
       "why": "",
       "personal": false
     },
@@ -23,93 +23,58 @@
       "max": 10
     },
     {
-      "id": "about",
-      "kind": "text",
-      "short": "the talk",
-      "prompt": "What's the talk about, and who is it with?",
-      "why": "Putting it in one place shows you what this talk is really for.",
-      "personal": true,
-      "max_chars": 300
-    },
-    {
       "id": "heard",
       "kind": "text",
       "short": "what I want them to hear",
       "prompt": "If they remember one thing you said, what should it be?",
       "why": "Knowing your one point keeps the talk from drifting into old fights.",
       "personal": true,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "answer",
+      "options": [
+        "I'm on your side, even when I'm upset",
+        "I want us to sort this out together",
+        "I'm not trying to blame you",
+        "I miss feeling close to you",
+        "This matters to me, and so do you"
+      ]
     },
     {
       "id": "soft_start",
       "kind": "text",
       "short": "my soft start",
-      "prompt": "Write your opening like this: I feel… about… and I need…",
+      "prompt": "Write your opening: how you feel, about what, and what you need.",
       "why": "Starting with how you feel, not what they did, makes it easier for them to listen.",
       "personal": true,
-      "max_chars": 300
-    },
-    {
-      "id": "hot_spot",
-      "kind": "chips",
-      "short": "where it could get heated",
-      "prompt": "Where could it get heated?",
-      "why": "Spotting the hot spot ahead of time lets you catch it before it catches you.",
-      "personal": true,
-      "chips": [
-        "If they get defensive",
-        "If old stuff comes up",
-        "If they go quiet",
-        "If I feel blamed",
-        "If voices rise",
-        "Not sure yet"
-      ],
-      "multi": true
-    },
-    {
-      "id": "signs",
-      "kind": "chips",
-      "short": "my warning signs",
-      "prompt": "How will you know you're too worked up to keep going?",
-      "why": "Knowing your own signs tells you when to pause while you still can.",
-      "personal": false,
-      "chips": [
-        "Heart pounding",
-        "Can't think straight",
-        "I just want to win",
-        "I just want to leave",
-        "I go quiet",
-        "My voice gets louder"
-      ],
-      "multi": true
+      "max_chars": 300,
+      "option_mode": "starter",
+      "options": [
+        "I feel nervous, but…",
+        "I've been feeling…",
+        "I miss it when…",
+        "Could you help me…"
+      ]
     },
     {
       "id": "break_line",
       "kind": "text",
       "short": "my break line",
-      "prompt": "Write the line you'll say to take a break, with a time to come back. Something like: I need 20 minutes, then let's keep going.",
+      "prompt": "Write the line you'll say to take a break, with a time to come back.",
       "why": "Having the words ready makes a break feel like care instead of walking out.",
       "personal": false,
-      "max_chars": 200
-    },
-    {
-      "id": "ready",
-      "kind": "slider",
-      "short": "how ready",
-      "prompt": "How ready do you feel for it?",
-      "why": "It tells you whether to plan a little more or go have the talk.",
-      "personal": false,
-      "min": 0,
-      "max": 10,
-      "labels": [
-        "Not ready",
-        "Ready"
+      "max_chars": 200,
+      "option_mode": "answer",
+      "options": [
+        "I need 20 minutes, then let's keep going.",
+        "I'm getting too worked up. Can we pick this up after dinner?",
+        "Let me take a walk and come back in half an hour.",
+        "I want to get this right. Can we pause until tonight?"
       ]
     },
     {
       "id": "mood_end",
       "kind": "mood",
-      "short": "feeling",
+      "short": "feeling now",
       "prompt": "How do you feel right now?",
       "why": "Comparing with the start shows you what having a plan did.",
       "personal": false,

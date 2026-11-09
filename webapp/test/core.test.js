@@ -98,9 +98,10 @@ test("draftKey", () => {
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 10, 8, 12);
 
-test("makeDraft stamps the time", () => {
-  const d = JSON.parse(C.makeDraft(3, [1, "x"], NOW));
-  assert.deepEqual(d, { t: NOW, i: 3, a: [1, "x"] });
+test("makeDraft stamps the time and names each answer's card", () => {
+  const d = JSON.parse(C.makeDraft(3, [1, "x"], NOW, ["m1", "t"]));
+  assert.deepEqual(d, { t: NOW, i: 3, a: [1, "x"], k: ["m1", "t"] });
+  assert.deepEqual(JSON.parse(C.makeDraft(3, [1], NOW)), { t: NOW, i: 3, a: [1] });
 });
 
 test("readDraft accepts only a stamped draft", () => {
@@ -133,4 +134,116 @@ test("staleDrafts lists d_ keys older than 7 days or unreadable, never the open 
   assert.deepEqual(C.staleDrafts(items, NOW, "d_open0000000").sort(),
     ["d_broken00000", "d_old0000000"]);
   assert.equal(C.DRAFT_TTL_MS, 7 * DAY);
+});
+
+/* ---------- R24: tap-first text cards ---------- */
+
+const TAPS = {
+  type: "check_story", v: 2, title: "T", pitch: "p",
+  cards: [
+    { id: "pitch", kind: "pitch", prompt: "p", personal: false },
+    { id: "happened", kind: "text", prompt: "What happened?", personal: true, max_chars: 300,
+      option_mode: "starter", options: ["They said…", "I walked in and…", "It started when…"] },
+    { id: "story", kind: "text", prompt: "What did it mean?", personal: true, max_chars: 300,
+      option_mode: "answer", options: ["They're upset with me", "I messed up", "I don't know"] },
+    { id: "friend", kind: "text", prompt: "A friend?", personal: false, max_chars: 300,
+      option_mode: "answer", options: ["Go easy", "Ask them", "Sleep on it"] },
+    { id: "reads", kind: "chips", prompt: "r", personal: true, chips: ["a", "b"], multi: true },
+  ],
+};
+const MINE = ["She's angry with me", "I said the wrong thing", "I don't know yet"];
+
+test("applyWording takes tailored options for personal answer cards only", () => {
+  const out = C.applyWording(TAPS, { options: {
+    story: MINE,
+    friend: MINE,                                      // not personal
+    reads: MINE,                                       // not a text card
+    happened: ["Then…", "They said…", "It started when…"],  // R25: starters never tailored
+  } });
+  assert.deepEqual(out.cards[2].options, MINE);
+  assert.deepEqual(out.cards[1].options, TAPS.cards[1].options);
+  assert.deepEqual(out.cards[3].options, TAPS.cards[3].options);
+  assert.equal(out.cards[4].options, undefined);
+  assert.deepEqual(TAPS.cards[2].options, ["They're upset with me", "I messed up", "I don't know"]);
+});
+
+test("applyWording keeps the generic options when the tailored ones don't fit the rules", () => {
+  for (const bad of [
+    MINE.slice(0, 2), MINE.concat(["a", "b", "c"]), MINE.slice(0, 2).concat(["x".repeat(81)]),
+    MINE.slice(0, 2).concat(["two\nlines"]), MINE.slice(0, 2).concat([7]), "nope",
+    [MINE[0], MINE[0], MINE[1]],
+  ]) {
+    const out = C.applyWording(TAPS, { options: { story: bad } });
+    assert.deepEqual(out.cards[2].options, TAPS.cards[2].options, JSON.stringify(bad));
+  }
+  const told = C.applyWording(TAPS, { options: { happened: ["Riley ignored you", "She was cold", "You were rude"] } });
+  assert.deepEqual(told.cards[1].options, TAPS.cards[1].options);
+  // a starter is at most 4 words before its ellipsis
+  assert.equal(C.cleanOptions(["Then…", "They said…", "When Riley got home from work…"], "starter"), null);
+  assert.deepEqual(C.cleanOptions(["Then...", "They said…", "I walked in and…"], "starter"),
+    ["Then…", "They said…", "I walked in and…"]);
+});
+
+test("tapOption: an answer fills the box, a starter begins it, typed words are never lost", () => {
+  const starter = TAPS.cards[1], answer = TAPS.cards[2];
+  assert.equal(C.tapOption(answer, "", "I messed up"), "I messed up");
+  assert.equal(C.tapOption(answer, "I messed up", "I don't know"), "I don't know");  // swap
+  assert.equal(C.tapOption(answer, "I messed up", "I messed up"), "");              // untap
+  assert.equal(C.tapOption(answer, "she was quiet", "I messed up"), "she was quiet. I messed up");
+  assert.equal(C.tapOption(answer, "she was quiet. ", "I messed up"), "she was quiet. I messed up");
+  assert.equal(C.tapOption(answer, "was she quiet?", "I messed up"), "was she quiet? I messed up");
+  assert.equal(C.tapOption(starter, "", "They said…"), "They said ");
+  assert.equal(C.tapOption(starter, "They said ", "It started when…"), "It started when ");
+  assert.equal(C.tapOption(starter, "They said", "They said…"), "");
+  assert.equal(C.tapOption(starter, "Riley left.", "It started when…"), "Riley left. It started when ");
+  assert.equal(C.tapOption(starter, "Riley left", "Then…"), "Riley left. Then ");
+  assert.equal(C.tapOption(starter, "Riley left.\n", "It started when…"), "Riley left.\nIt started when ");
+});
+
+test("pickedOption names the tap the box still holds", () => {
+  const starter = TAPS.cards[1], answer = TAPS.cards[2];
+  assert.equal(C.pickedOption(answer, "I messed up"), "I messed up");
+  assert.equal(C.pickedOption(answer, "I messed up a bit"), null);
+  assert.equal(C.pickedOption(starter, "They said "), "They said…");
+  assert.equal(C.pickedOption(starter, "They said she was tired"), null);
+  assert.equal(C.pickedOption(answer, ""), null);
+});
+
+test("the closing feeling card names where they started", () => {
+  assert.equal(C.moodPrompt(3), "You started at 3. Where are you now?");
+  assert.equal(C.moodPrompt(0), "You started at 0. Where are you now?");
+  assert.equal(C.moodPrompt(null), null);
+  assert.equal(C.moodPrompt(undefined), null);
+});
+
+/* ---------- R26: a draft from before the sheet changed keeps its words ---------- */
+
+const V2 = [
+  { id: "mood_start", kind: "mood", min: 0, max: 10 },
+  { id: "happened", kind: "text", max_chars: 20 },
+  { id: "story", kind: "text", max_chars: 300 },
+  { id: "evidence", kind: "text", max_chars: 300 },
+  { id: "feel", kind: "chips", chips: ["Calm", "Sad"], multi: true },
+  { id: "mood_end", kind: "mood", min: 0, max: 10 },
+];
+
+test("restoreAnswers maps by card id when the draft names them", () => {
+  const d = { t: NOW, i: 2, a: [4, "she left", ["Sad", "Gone"], "old card words", 12],
+              k: ["mood_start", "story", "feel", "sure_text", "mood_end"] };
+  assert.deepEqual(C.restoreAnswers(V2, d),
+    [4, "old card words", "she left", "", ["Sad"], null]);
+});
+
+test("restoreAnswers keeps a same-shape draft by position", () => {
+  const d = { t: NOW, i: 2, a: [3, "facts", "story", "", [], 6] };
+  assert.deepEqual(C.restoreAnswers(V2, d), [3, "facts", "story", "", [], 6]);
+});
+
+test("restoreAnswers never throws words away when the count changed", () => {
+  // a v1 draft (no ids, 9 answers) against a v2 sheet: its words go to the empty text
+  // cards in order, cut to fit; nothing is paired by position
+  const d = { t: NOW, i: 5, a: [3, "Riley went quiet at dinner", "she's angry", 70, "",
+                                ["They were stressed"], "she was tired", "", 6] };
+  assert.deepEqual(C.restoreAnswers(V2, d),
+    [null, "Riley went quiet at", "she's angry", "They were stressed\nshe was tired", [], null]);
 });

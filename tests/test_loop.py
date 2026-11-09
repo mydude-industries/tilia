@@ -1017,8 +1017,7 @@ def test_outbox_markup_rides_last_part(store, clock, claude):
 
 EXPIRED = "That one had expired, so I didn't keep your answers. Ask me for a fresh one any time."
 HAPPENED = "Riley went quiet at Sunday dinner"
-ANSWERS = [3, HAPPENED, "that I'd said something wrong", 70, "she smiled earlier",
-           ["They were stressed"], "she was tired", "it's probably not about you", 6]
+ANSWERS = [3, HAPPENED, "that I'd said something wrong", "she smiled earlier", "she was tired", 6]
 DAY = 24 * 3600
 
 
@@ -1094,18 +1093,32 @@ def _oversized(token):
 @pytest.mark.parametrize("make", [
     _oversized,
     lambda token: payload(token, type="plan_talk"),
-    lambda token: payload(token, answers=ANSWERS[:-1]),
+    lambda token: payload(token, answers="not a list"),
     lambda token: "{not json",
 ])
-def test_oversized_or_malformed_ignored(wstore, tg, clock, claude, make):
+def test_oversized_or_malformed_gets_one_honest_note(wstore, tg, clock, claude, make):
+    """R26: never silence after they pressed Send."""
     e = offered(wstore, clock)
     loop = mkloop(wstore, tg, clock, claude)
     tg.web_app(make(e.token))
     loop.tick()
     clock.advance(60)
     loop.tick()
-    assert tg.sent == [] and claude.calls == []
+    assert tg.sent == [(PAIRED, worksheets.INVALID)] and claude.coach_calls() == []
+    assert worksheets.INVALID == ("That one didn't come through right, so I couldn't read "
+                                  "your answers. Want to tell me here instead?")
     assert wstore.get_entry(e.id).status == "open"
+
+
+def test_old_sheet_answers_are_answered_not_dropped(wstore, tg, clock, claude):
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token, answers=ANSWERS[:-1] + ["one more", 6]))
+    loop.tick()
+    clock.advance(10)
+    loop.tick()
+    assert wstore.get_entry(e.id).status == "done"
+    assert "one more" in claude.coach_calls()[0]
 
 
 def test_expired_payload_gets_one_note(wstore, tg, clock, claude):

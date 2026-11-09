@@ -1,6 +1,6 @@
 {
   "type": "tarot",
-  "v": 1,
+  "v": 2,
   "title": "Tarot card",
   "pitch": "One card, drawn just for you. You read it first, then Tilia shows you the read it wrote before you looked. Not a prediction: a way in to what's on your mind.",
   "cards": [
@@ -37,7 +37,13 @@
       "prompt": "What do you notice first?",
       "why": "What catches your eye first often has something to do with you.",
       "personal": false,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "starter",
+      "options": [
+        "I notice…",
+        "My eye goes to…",
+        "It reminds me of…"
+      ]
     },
     {
       "id": "touches",
@@ -46,7 +52,15 @@
       "prompt": "What in your life does it touch right now?",
       "why": "A card is only useful where it meets something real.",
       "personal": true,
-      "max_chars": 400
+      "max_chars": 400,
+      "option_mode": "answer",
+      "options": [
+        "Something between me and someone close",
+        "A choice I keep putting off",
+        "How tired I've been lately",
+        "Something I'm afraid to lose",
+        "I'm not sure yet"
+      ]
     },
     {
       "id": "where",
@@ -72,7 +86,15 @@
       "prompt": "Anything more about that feeling?",
       "why": "Putting it into words can show you where else you've felt it.",
       "personal": false,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "answer",
+      "options": [
+        "It's tight, like holding my breath",
+        "It feels heavy",
+        "It's restless",
+        "It's soft, almost a relief",
+        "I can't really feel it"
+      ]
     },
     {
       "id": "mood_end",

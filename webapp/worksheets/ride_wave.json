@@ -1,6 +1,6 @@
 {
   "type": "ride_wave",
-  "v": 1,
+  "v": 2,
   "title": "Ride the wave",
   "pitch": "About 2 minutes, best while the feeling is still loud. It helps you watch the wave instead of acting from the top of it. It may shift as you go, or not; noticing either way is useful.",
   "cards": [
@@ -42,38 +42,6 @@
       "multi": true
     },
     {
-      "id": "set_off",
-      "kind": "text",
-      "short": "what set it off",
-      "prompt": "What set it off?",
-      "why": "Knowing the spark helps you see the next wave coming.",
-      "personal": true,
-      "max_chars": 250
-    },
-    {
-      "id": "strength_before",
-      "kind": "slider",
-      "short": "how strong, before",
-      "prompt": "How strong is it right now?",
-      "why": "A number now gives you something to check in with later, whether it moves or not.",
-      "personal": false,
-      "min": 0,
-      "max": 10,
-      "labels": [
-        "Barely there",
-        "As big as it gets"
-      ]
-    },
-    {
-      "id": "pull",
-      "kind": "text",
-      "short": "what it pushes me to do",
-      "prompt": "What is it pushing you to do right now?",
-      "why": "Saying the pull out loud makes it easier not to act on it straight away.",
-      "personal": true,
-      "max_chars": 250
-    },
-    {
       "id": "reset",
       "kind": "chips",
       "short": "the reset I tried",
@@ -91,32 +59,26 @@
       "multi": true
     },
     {
-      "id": "strength_after",
-      "kind": "slider",
-      "short": "how strong, after",
-      "prompt": "How strong is it now?",
-      "why": "Up, down or the same, you just watched it closely instead of acting on it.",
-      "personal": false,
-      "min": 0,
-      "max": 10,
-      "labels": [
-        "Barely there",
-        "As big as it gets"
-      ]
-    },
-    {
       "id": "next_move",
       "kind": "text",
       "short": "my next move",
-      "prompt": "What's one thing you'll do, or not do, while it's still here?",
+      "prompt": "It may be pushing you to act. What's one thing you'll do, or not do, while it's still here?",
       "why": "Choosing your next move on purpose, not from the pull, is the reason to wait.",
       "personal": true,
-      "max_chars": 250
+      "max_chars": 250,
+      "option_mode": "answer",
+      "options": [
+        "Wait an hour before I reply",
+        "Not send the message I drafted",
+        "Step outside for ten minutes",
+        "Tell them I need a little time",
+        "Sleep on it and talk tomorrow"
+      ]
     },
     {
       "id": "mood_end",
       "kind": "mood",
-      "short": "feeling",
+      "short": "feeling now",
       "prompt": "How do you feel right now?",
       "why": "Comparing with the start shows you what happened, either way.",
       "personal": false,

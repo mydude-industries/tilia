@@ -60,8 +60,9 @@ def _answer_text(card: dict | None, a) -> str | None:
 
 def _qa(sheet: dict | None, wording: dict | None, answers: list | None) -> list[dict]:
     answers = answers or []
-    if sheet is None or len(answers) != len(entries.answer_cards(sheet)):
-        # no sheet to pair them with (a type that has none yet): the words alone
+    if sheet is None or not entries.fits(sheet, answers):
+        # no sheet to pair them with (a type that has none yet), or one that has changed
+        # since they answered (an older sheet version): the words alone
         return [{"q": "", "a": t} for t in (_answer_text(None, a) for a in answers
                                             if not isinstance(a, int)) if t]
     prompts = (wording or {}).get("prompts") or {}
@@ -113,7 +114,7 @@ def _spread(e, sheet, art) -> dict:
     "together" answer. `paired` is False when the answers don't fit the sheet; their
     words then show on their own, as for any worksheet."""
     said: dict[str, str | None] = {}
-    paired = sheet is not None and len(e.answers or []) == len(entries.answer_cards(sheet))
+    paired = sheet is not None and entries.fits(sheet, e.answers or [])
     if paired:
         said = {c["id"]: _answer_text(c, a)
                 for c, a in zip(entries.answer_cards(sheet), e.answers)}

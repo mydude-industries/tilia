@@ -13,6 +13,9 @@
 
   var PAYLOAD_MAX = 4096;
   var WORDING_MAX = 200;
+  var OPTION_MAX = 80;
+  var STARTER_WORDS = 4;
+  var ELLIPSIS = "\u2026";
 
   function intOrNull(s) {
     return s !== null && /^\d+$/.test(s) ? parseInt(s, 10) : null;
@@ -77,7 +80,110 @@
         if (c.personal === true && typeof p === "string" && p.trim()) c.prompt = cut(p);
       });
     }
+    var options = wording.options;
+    if (options && typeof options === "object") {
+      out.cards.forEach(function (c) {
+        // R25: only answer cards are tailored; a card's sentence starters stay generic
+        if (c.personal !== true || c.kind !== "text" || c.option_mode !== "answer") return;
+        var o = Object.prototype.hasOwnProperty.call(options, c.id)
+          ? cleanOptions(options[c.id], c.option_mode) : null;
+        if (o) c.options = o;
+      });
+    }
     return out;
+  }
+
+  /* R24: tailored taps follow the Mac's rules (entries.clean_wording): 3-5 distinct
+     one-line taps of up to 80 characters; on a starter card each ends with an ellipsis.
+     Anything else keeps the sheet's own taps. */
+  function cleanOptions(raw, mode) {
+    if (!Array.isArray(raw) || raw.length < 3 || raw.length > 5) return null;
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var o = raw[i];
+      if (typeof o !== "string" || /[\n\r\v\f\u0085\u2028\u2029]/.test(o)) return null;
+      o = o.trim();
+      if (mode === "starter" && o.slice(-3) === "...") o = o.slice(0, -3).trim() + ELLIPSIS;
+      if (!o || Array.from(o).length > OPTION_MAX || out.indexOf(o) >= 0) return null;
+      if (mode === "starter" && (o.slice(-1) !== ELLIPSIS || o.length < 2
+          || o.slice(0, -1).trim().split(/\s+/).length > STARTER_WORDS)) return null;
+      out.push(o);
+    }
+    return out;
+  }
+
+  /* What a tap puts in the box: an answer as it is; a starter without its ellipsis and
+     with a space, so the cursor lands ready for their words. */
+  function fillOf(card, option) {
+    return card.option_mode === "starter"
+      ? option.replace(new RegExp(ELLIPSIS + "$"), "").replace(/\s+$/, "") + " "
+      : option;
+  }
+
+  // The tap the box still holds untouched, or null once they've written their own.
+  function pickedOption(card, value) {
+    var v = (value || "").trim();
+    if (!v) return null;
+    var opts = card.options || [];
+    for (var i = 0; i < opts.length; i++) if (fillOf(card, opts[i]).trim() === v) return opts[i];
+    return null;
+  }
+
+  /* The box after a tap: an empty box or an untouched tap is replaced (the same tap
+     again clears it); words they typed themselves stay, and the tap is added after them. */
+  function tapOption(card, current, option) {
+    var cur = current || "";
+    var picked = pickedOption(card, cur);
+    if (picked === option) return "";
+    if (!cur.trim() || picked !== null) return fillOf(card, option);
+    if (/\n$/.test(cur)) return cur + fillOf(card, option);
+    var base = cur.replace(/\s+$/, "");
+    return base + (/[.!?\u2026]$/.test(base) ? " " : ". ") + fillOf(card, option);
+  }
+
+  /* R26: a saved draft back into the sheet's answers. Each answer goes to the card it was
+     written for (drafts name their cards), or by position when the draft has the sheet's
+     exact shape. A draft from before the sheet changed keeps its words anyway: whatever
+     can't be placed goes into the empty text cards in order, the rest joined into the
+     last one, cut to fit. Feelings and slider numbers are only kept where they pair. */
+  function restoreAnswers(asked, d) {
+    function empty(c) { return c.kind === "text" ? "" : c.kind === "chips" ? [] : null; }
+    function fit(c, a) {
+      if (c.kind === "text" && typeof a === "string") return a.slice(0, c.max_chars);
+      if (c.kind === "chips" && Array.isArray(a)) {
+        return a.filter(function (x) { return c.chips.indexOf(x) >= 0; });
+      }
+      if ((c.kind === "mood" || c.kind === "slider") && typeof a === "number"
+          && a >= c.min && a <= c.max) return Math.round(a);
+      return undefined;
+    }
+    var out = asked.map(empty);
+    var left = [];
+    var ids = Array.isArray(d.k) && d.k.length === d.a.length ? d.k : null;
+    var same = !ids && d.a.length === asked.length;
+    d.a.forEach(function (a, n) {
+      var at = ids ? asked.findIndex(function (c) { return c.id === ids[n]; }) : same ? n : -1;
+      var v = at >= 0 ? fit(asked[at], a) : undefined;
+      if (v !== undefined) out[at] = v;
+      else if (typeof a === "string" && a.trim()) left.push(a.trim());
+      else if (Array.isArray(a) && a.length) {
+        var words = a.filter(function (x) { return typeof x === "string" && x.trim(); });
+        if (words.length) left.push(words.join(", "));
+      }
+    });
+    var free = [];
+    asked.forEach(function (c, n) { if (c.kind === "text" && !out[n]) free.push(n); });
+    free.forEach(function (n, j) {
+      if (!left.length) return;
+      var text = j === free.length - 1 ? left.splice(0).join("\n") : left.shift();
+      out[n] = text.slice(0, asked[n].max_chars).trim();
+    });
+    return out;
+  }
+
+  // The closing feeling card, when the opening one was answered.
+  function moodPrompt(first) {
+    return typeof first === "number" ? "You started at " + first + ". Where are you now?" : null;
   }
 
   function buildPayload(launch, answers) {
@@ -100,8 +206,11 @@
      and any draft older than an open entry's 7 days is deleted. */
   var DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-  function makeDraft(at, answers, now) {
-    return JSON.stringify({ t: now, i: at, a: answers });
+  // `k` names each answer's card, so a draft still lands right if the sheet changes.
+  function makeDraft(at, answers, now, ids) {
+    var d = { t: now, i: at, a: answers };
+    if (ids) d.k = ids;
+    return JSON.stringify(d);
   }
 
   function readDraft(raw) {
@@ -135,6 +244,13 @@
     WORDING_MAX: WORDING_MAX,
     parseLaunch: parseLaunch,
     applyWording: applyWording,
+    OPTION_MAX: OPTION_MAX,
+    cleanOptions: cleanOptions,
+    fillOf: fillOf,
+    pickedOption: pickedOption,
+    tapOption: tapOption,
+    moodPrompt: moodPrompt,
+    restoreAnswers: restoreAnswers,
     buildPayload: buildPayload,
     byteLength: byteLength,
     remaining: remaining,

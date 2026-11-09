@@ -162,8 +162,9 @@ class Loop:
             outcome = worksheets.accept(self.store, now, u.web_app_data)
             if outcome != "ok":
                 log(f"worksheet payload: {outcome}")
-            if outcome == "expired":
-                self._enqueue(worksheets.EXPIRED, now)
+            if outcome in ("expired", "invalid"):  # R26: never silence after Send
+                self._enqueue(worksheets.EXPIRED if outcome == "expired"
+                              else worksheets.INVALID, now)
                 self._flush_now(now)
             return  # answered entries get their reply from _entries
         if u.kind != "text" or u.text is None:

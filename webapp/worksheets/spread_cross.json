@@ -1,6 +1,6 @@
 {
   "type": "spread_cross",
-  "v": 1,
+  "v": 2,
   "title": "Five-card cross",
   "pitch": "Five cards in a cross around what's on your mind. Read each one yourself, then see the read Tilia wrote before you looked. Not a prediction.",
   "cards": [
@@ -37,7 +37,14 @@
       "prompt": "What does this one say to you here?",
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
-      "max_chars": 180
+      "max_chars": 180,
+      "option_mode": "starter",
+      "options": [
+        "It reminds me of…",
+        "What stands out is…",
+        "Here it feels like…",
+        "I see…"
+      ]
     },
     {
       "id": "card_2",
@@ -54,7 +61,14 @@
       "prompt": "What does this one say to you here?",
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
-      "max_chars": 180
+      "max_chars": 180,
+      "option_mode": "starter",
+      "options": [
+        "It reminds me of…",
+        "What stands out is…",
+        "Here it feels like…",
+        "I see…"
+      ]
     },
     {
       "id": "card_3",
@@ -71,7 +85,14 @@
       "prompt": "What does this one say to you here?",
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
-      "max_chars": 180
+      "max_chars": 180,
+      "option_mode": "starter",
+      "options": [
+        "It reminds me of…",
+        "What stands out is…",
+        "Here it feels like…",
+        "I see…"
+      ]
     },
     {
       "id": "card_4",
@@ -88,7 +109,14 @@
       "prompt": "What does this one say to you here?",
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
-      "max_chars": 180
+      "max_chars": 180,
+      "option_mode": "starter",
+      "options": [
+        "It reminds me of…",
+        "What stands out is…",
+        "Here it feels like…",
+        "I see…"
+      ]
     },
     {
       "id": "card_5",
@@ -105,7 +133,14 @@
       "prompt": "What does this one say to you here?",
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
-      "max_chars": 180
+      "max_chars": 180,
+      "option_mode": "starter",
+      "options": [
+        "It reminds me of…",
+        "What stands out is…",
+        "Here it feels like…",
+        "I see…"
+      ]
     },
     {
       "id": "together",
@@ -114,7 +149,13 @@
       "prompt": "Looking at all of them together, what do you notice?",
       "why": "The links you see between the cards often say the most.",
       "personal": false,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "starter",
+      "options": [
+        "Together they feel…",
+        "What keeps returning is…",
+        "The strongest one is…"
+      ]
     },
     {
       "id": "mood_end",

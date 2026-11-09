@@ -15,9 +15,12 @@ from tests.test_commands import FakeTG
 
 NOW = datetime(2026, 11, 7, 12, 0).astimezone()
 BLOT_JS = (paths.REPO_ROOT / "webapp" / "blot.js").read_text(encoding="utf-8")
-STORY = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong", 70,
-         "she smiled earlier", ["They were stressed"], "she was tired",
-         "it's probably not about you", 6]
+STORY = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong",
+         "she smiled earlier", "she was tired", 6]
+# check_story as answered against its first version (v1, nine answer cards), before Task 17
+STORY_V1 = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong", 70,
+            "she smiled earlier", ["They were stressed"], "she was tired",
+            "it's probably not about you", 6]
 BLOT = [4, None, "two herons bowing", "a cracked mask", ["Tender"], "soft, like an apology", 5]
 EVIL = "</script><img src=x onerror=alert(1)><b>hi</b>"
 
@@ -110,9 +113,33 @@ def test_newest_first_with_both_sides(store):
     story = d["entries"][1]
     assert {"q": "What did you tell yourself Riley meant?",
             "a": "that I'd said something wrong"} in story["qa"]
-    assert {"q": "How sure are you that story is true?", "a": "70 of 100"} in story["qa"]
+    assert {"q": "If a friend told you this, what else might it mean?",
+            "a": "she was tired"} in story["qa"]
     assert story["mood"] == [3, 6] and story["themes"] == ["closeness"]
     assert story["reply"] == "Thanks for writing that." and story["title"] == "Check the story"
+
+
+def test_old_sheet_version_shows_the_words_alone(store):
+    """An entry answered against check_story v1 still renders after the sheet moved to v2:
+    every word they wrote shows, none under a question it didn't answer."""
+    eid = done(store, "check_story", STORY_V1)
+    [item] = data_of(mirror.render(store, NOW))["entries"]
+    assert item["id"] == eid and item["mood"] == [3, 6]
+    assert all(qa["q"] == "" for qa in item["qa"])
+    words = [qa["a"] for qa in item["qa"]]
+    for said in ("Riley went quiet at Sunday dinner", "that I'd said something wrong",
+                 "she smiled earlier", "They were stressed", "she was tired",
+                 "it's probably not about you"):
+        assert said in words
+
+
+def test_same_count_wrong_kinds_is_not_paired(store):
+    """A stored list that happens to have the right length but not the right kinds."""
+    done(store, "check_story", [3, ["They were stressed"], "that I'd said something wrong",
+                                "she smiled earlier", "she was tired", 6])
+    [item] = data_of(mirror.render(store, NOW))["entries"]
+    assert all(qa["q"] == "" for qa in item["qa"])
+    assert "They were stressed" in [qa["a"] for qa in item["qa"]]
 
 
 def test_what_happened_after_followup(store):

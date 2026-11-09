@@ -1,14 +1,14 @@
 {
   "type": "week_back",
-  "v": 1,
+  "v": 2,
   "title": "Look back at the week",
-  "pitch": "About 3 minutes. Looking back on purpose shows you progress you'd otherwise miss, and turns one hard moment into something to try next week.",
+  "pitch": "About 2 minutes. Looking back on purpose shows you progress you'd otherwise miss, and turns one hard moment into something to try next week.",
   "cards": [
     {
       "id": "pitch",
       "kind": "pitch",
       "short": "start",
-      "prompt": "About 3 minutes. Looking back on purpose shows you progress you'd otherwise miss, and turns one hard moment into something to try next week.",
+      "prompt": "About 2 minutes. Looking back on purpose shows you progress you'd otherwise miss, and turns one hard moment into something to try next week.",
       "why": "",
       "personal": false
     },
@@ -29,26 +29,15 @@
       "prompt": "What went well this week, even something small?",
       "why": "Small wins are easy to forget, and noticing them shows you what's working.",
       "personal": true,
-      "max_chars": 300
-    },
-    {
-      "id": "week_words",
-      "kind": "chips",
-      "short": "the week in words",
-      "prompt": "Which words fit the week?",
-      "why": "A few words give you a quick read you can compare week to week.",
-      "personal": false,
-      "chips": [
-        "Calm",
-        "Busy",
-        "Tense",
-        "Close",
-        "Lonely",
-        "Hopeful",
-        "Tired",
-        "Mixed"
-      ],
-      "multi": true
+      "max_chars": 300,
+      "option_mode": "answer",
+      "options": [
+        "I kept my cool when it was hard",
+        "We had a good evening together",
+        "I got some real rest",
+        "I said what I needed instead of hinting",
+        "I did something just for me"
+      ]
     },
     {
       "id": "hard",
@@ -57,16 +46,13 @@
       "prompt": "What was one hard moment?",
       "why": "Picking one moment keeps it specific enough to learn from.",
       "personal": true,
-      "max_chars": 300
-    },
-    {
-      "id": "did_with",
-      "kind": "text",
-      "short": "what I did with it",
-      "prompt": "What did you do with it, and how did that go?",
-      "why": "Looking at your own move is the part you can change.",
-      "personal": false,
-      "max_chars": 300
+      "max_chars": 300,
+      "option_mode": "starter",
+      "options": [
+        "It was when…",
+        "It started with…",
+        "The worst part was…"
+      ]
     },
     {
       "id": "next_week",
@@ -75,12 +61,20 @@
       "prompt": "What's one thing you want to try next week?",
       "why": "One small, clear step is far more likely to happen than a big plan.",
       "personal": true,
-      "max_chars": 250
+      "max_chars": 250,
+      "option_mode": "answer",
+      "options": [
+        "Take a breath before I reply",
+        "Plan one evening just for us",
+        "Say what I need out loud",
+        "Go to bed a bit earlier",
+        "Ask before I assume"
+      ]
     },
     {
       "id": "mood_end",
       "kind": "mood",
-      "short": "feeling",
+      "short": "feeling now",
       "prompt": "How do you feel right now?",
       "why": "Comparing with the start shows you what looking back did.",
       "personal": false,

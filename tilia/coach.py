@@ -197,7 +197,7 @@ def _entry_gist(e) -> str:
     except ValueError:
         cards = None
     answers = e.answers or []
-    if cards is None or len(cards) != len(answers):
+    if cards is None or not entries.fits({"cards": cards}, answers):
         parts += [", ".join(map(str, a)) if isinstance(a, list) else str(a)
                   for a in answers if isinstance(a, (str, list)) and a]
     else:
@@ -271,6 +271,21 @@ def _answer_text(card: dict, a) -> str:
     return ", ".join(a) if isinstance(a, list) else str(a)
 
 
+def _reveal_row(entry, card: dict, cid: str | None, rows: list) -> None:
+    from . import entries
+    if entry.seed is not None:  # the blot, by its seed only: never the image
+        ink = {"green": "green and gold ink"}.get(entries.blot_palette(entry.seed), "black ink")
+        rows.append(f"The blot they looked at: seed {entry.seed}, {ink}")
+    elif cid:
+        info = entries.card_info(cid) or {}
+        name = info.get("name") or cid
+        num = f" ({info['number']})" if info.get("number") else ""
+        if entry.type in entries.SPREADS:  # each card in its position, in order
+            rows.append(f"{card['prompt']}: {name}{num}, upright")
+        else:
+            rows.append(f"The card they drew: {name}{num}, upright")
+
+
 def _entry(entry) -> str:
     """The worksheet they just filled out: each question as they saw it (personalized or
     generic), their answer, and how they felt before and after. A blot is named by its
@@ -281,23 +296,19 @@ def _entry(entry) -> str:
     mine = (entry.wording or {}).get("prompts") or {}
     rows = []
     drawn = iter(entries.card_ids(entry.card))
-    for card, a in zip(entries.answer_cards(sheet), entry.answers or []):
+    paired = entries.fits(sheet, entry.answers)
+    if not paired:  # answered against an older version of the sheet: the words alone,
+        # after what they looked at (the reveal cards, in order), so a read keeps its cards
+        for card in entries.answer_cards(sheet):
+            if card["kind"] == "reveal":
+                _reveal_row(entry, card, next(drawn, None), rows)
+        rows += [f"A: {_answer_text({'kind': 'text'}, a)}" for a in entry.answers or []
+                 if isinstance(a, (str, list)) and a]
+    for card, a in zip(entries.answer_cards(sheet), entry.answers or []) if paired else ():
         if card["kind"] == "mood":
             continue
         if card["kind"] == "reveal":
-            cid = next(drawn, None)
-            if entry.seed is not None:  # the blot, by its seed only: never the image
-                ink = {"green": "green and gold ink"}.get(entries.blot_palette(entry.seed),
-                                                         "black ink")
-                rows.append(f"The blot they looked at: seed {entry.seed}, {ink}")
-            elif cid:
-                info = entries.card_info(cid) or {}
-                name = info.get("name") or cid
-                num = f" ({info['number']})" if info.get("number") else ""
-                if entry.type in entries.SPREADS:  # each card in its position, in order
-                    rows.append(f"{card['prompt']}: {name}{num}, upright")
-                else:
-                    rows.append(f"The card they drew: {name}{num}, upright")
+            _reveal_row(entry, card, next(drawn, None), rows)
             continue
         rows.append(f"Q: {mine.get(card['id'], card['prompt'])}\nA: {_answer_text(card, a)}")
     f = lambda x: "?" if x is None else x  # noqa: E731

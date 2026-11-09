@@ -14,6 +14,8 @@ READ_MAX = 1200
 SPREAD_READ_MAX = 2000
 _RNG = secrets.SystemRandom()
 EXPIRED = "That one had expired, so I didn't keep your answers. Ask me for a fresh one any time."
+INVALID = ("That one didn't come through right, so I couldn't read your answers. "
+           "Want to tell me here instead?")
 _AI_DOWN = (LimitError, NotLoggedIn, MissingCLI, UnsupportedCLI)
 
 
@@ -22,19 +24,25 @@ def _system(name: str = "worksheet") -> str:
 
 
 def personalize(cfg, sheet: dict, focus: str, run=subprocess.run) -> dict | None:
-    """The sheet's pitch and personal prompts, reworded for this person's situation.
-    None when the call fails, the AI is unreachable (limit, login, missing CLI), or its
-    answer doesn't pass clean_wording: generic wording is used then. The coach's reply has
-    already succeeded by the time this runs, so nothing here may undo it."""
-    cards = [f"{c['id']}: {c['prompt']} (why: {c['why']})"
-             for c in sheet["cards"] if c.get("personal")]
+    """The sheet's pitch and personal prompts, reworded for this person's situation, and
+    tailored answer taps for its personal reflection cards (R24, R25: a card's sentence
+    starters are never tailored). None when the call fails, the AI is unreachable (limit,
+    login, missing CLI), or its answer doesn't pass clean_wording: generic wording is used
+    then. The coach's reply has already succeeded by the time this runs, so nothing here may
+    undo it."""
+    def line(c):
+        out = f"{c['id']}: {c['prompt']} (why: {c['why']})"
+        if c["kind"] == "text" and c["option_mode"] == "answer":  # R25: never starters
+            out += f" [answers: {' | '.join(c['options'])}]"
+        return out
+    cards = [line(c) for c in sheet["cards"] if c.get("personal")]
     prompt = "\n\n".join([
         coach.DATA_NOTE,
         "PROFILE (your working notes on this person)\n"
         + coach._tag("profile", profile.read(), "(empty)"),
         "FOCUS (the real situation this worksheet is about)\n" + coach._tag("focus", focus),
         f"WORKSHEET: {sheet['title']}\nPitch:\n" + coach._tag("pitch", sheet["pitch"]),
-        "PROMPTS TO REWRITE (id: prompt (why: what the card is for))\n"
+        "PROMPTS TO REWRITE (id: prompt (why: what the card is for) [its generic taps])\n"
         + coach._tag("cards", "\n".join(cards)),
         "Reply with the JSON object only.",
     ])
@@ -219,9 +227,13 @@ def accept(store, now, data: str) -> str:
         sheet = entries.load_sheet(e.type)
     except ValueError:
         return "invalid"
-    answers = entries.validate_answers(sheet, obj["answers"]) if e.type == obj["type"] else None
-    if answers is None:
+    if e.type != obj["type"]:
         return "invalid"
+    # R26: answers that don't pair with this sheet came from a page opened before it
+    # changed. Keep their words, bounded and unpaired, rather than lose them.
+    paired = entries.fits(sheet, obj["answers"])
+    answers = (entries.validate_answers(sheet, obj["answers"]) if paired
+               else entries.unpaired(obj["answers"]))
     if e.status == "open" and datetime.fromisoformat(e.created) < now.astimezone() - entries.TTL:
         expire(store, now)  # after a long sleep the payload can beat the slow pass
         e = store.get_entry(e.id)
@@ -229,7 +241,8 @@ def accept(store, now, data: str) -> str:
         return "expired"
     if e.status in ("answered", "done"):
         return "answered"
-    store.answer_entry(e.id, answers, *entries.moods(sheet, answers))
+    store.answer_entry(e.id, answers, *(entries.moods(sheet, answers) if paired
+                                        else entries.unpaired_moods(answers)))
     return "ok"
 
 
