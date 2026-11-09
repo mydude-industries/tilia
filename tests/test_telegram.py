@@ -172,7 +172,7 @@ def test_send_webapp_button_markup():
     assert Telegram(TOKEN, post=post).send_webapp_button(7, "Hi", "Open", "https://x.test/a")
     assert json.loads(post.calls[0][1]["reply_markup"]) == {
         "keyboard": [[{"text": "Open", "web_app": {"url": "https://x.test/a"}}]],
-        "one_time_keyboard": True, "resize_keyboard": True}
+        "one_time_keyboard": True, "resize_keyboard": True, "is_persistent": True}
 
 
 def test_markup_only_on_last_part():

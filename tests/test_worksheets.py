@@ -1144,3 +1144,61 @@ def test_coach_gives_a_real_blot_read():
                  "never score", "never diagnose", '"this means you are'):
         assert want in blot, want
     assert "Rorschach" not in blot or "never call it" in blot
+
+
+# ---- v0.2.2: an offer that was dropped never claims it was sent ---------------------------
+HONEST = "I couldn't attach that one just now. Ask me again in a bit."
+
+
+def test_dropped_offer_worksheets_off_says_so(store):
+    r = say(store, fake(ASSIGNED), c=cfg(worksheets=False))
+    assert r.offer is None and box(store)[0]["text"].endswith(HONEST)
+    assert box(store)[0]["text"].startswith("Try this before Sunday.")
+
+
+def test_dropped_offer_unavailable_type_says_so(store, monkeypatch):
+    monkeypatch.setattr(entries, "available_types", lambda: [])
+    say(store, fake(ASKED_GENERIC))
+    assert box(store)[0]["text"].endswith(HONEST)
+
+
+def test_dropped_offer_card_assignment_says_so(store):
+    out = coach_json("Here you go.", new_assignment={
+        "kind": "worksheet", "type": "tarot", "focus": None, "due": TOMORROW})
+    say(store, fake(out))
+    assert store.entries() == [] and box(store)[0]["text"].endswith(HONEST)
+
+
+def test_dropped_offer_again_with_nothing_open_says_so(store):
+    say(store, fake(coach_json("Here it is again.", worksheet={"type": "again", "focus": None})))
+    assert box(store)[0]["text"].endswith(HONEST)
+
+
+def test_dropped_offer_note_is_in_the_stored_turn(store):
+    say(store, fake(ASSIGNED), c=cfg(worksheets=False))
+    assert store.recent_turns(5)[-1].text.endswith(HONEST)
+
+
+def test_no_note_when_offer_attached_or_none_requested(store):
+    say(store, fake(ASKED_GENERIC))
+    assert HONEST not in box(store)[0]["text"]
+    store.set_meta("outbox", None)
+    say(store, fake(coach_json("ok, tell me more")), text="hi")
+    assert HONEST not in box(store)[0]["text"]
+
+
+def test_crisis_drop_adds_nothing(store):
+    say(store, fake(coach_json("Are you safe right now?", "crisis",
+                               worksheet={"type": "check_story", "focus": None})))
+    text = box(store)[0]["text"]
+    assert text.startswith("Are you safe right now?") and coach.NOT_ATTACHED not in text
+    assert "card" not in text and "worksheet" not in text
+
+
+def test_coach_prompt_never_places_the_button_above():
+    for name in ("coach.md", "checkin.md"):
+        text = (PROMPTS / name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if re.search(r"\b(button|Open)\b", line):
+                assert not re.search(r"\babove\b", line), (name, line)
+    assert "below the message box" in COACH_SYS

@@ -16,6 +16,7 @@ DIGEST_COMPACT = 300
 EPISODE_GAP = timedelta(hours=24)
 SUMMARY_MAX_TURNS = 200
 RETRY_LINE = "give me a sec, try that again?"
+NOT_ATTACHED = "I couldn't attach that one just now. Ask me again in a bit."
 CRISIS_HOLD = "I'm here with you. Are you safe right now?"  # crisis, and no words of its own
 PROSE_MAX = 3500
 LINE_988 = ("You can also call or text 988 any time, day or night — alongside me, not "
@@ -384,6 +385,7 @@ def _offer(store, cfg, now, r: CoachReply, run) -> None:
     ws = r.worksheet
     if r.state == "crisis" or _episode(store, now)[0]:
         return
+    asked = bool(na or ws)
     available = entries.available_types()
     if na and (cfg.worksheets is False or na["type"] not in available
                or na["type"] in entries.CARD_TYPES):  # D11: cards are never assignments
@@ -401,6 +403,8 @@ def _offer(store, cfg, now, r: CoachReply, run) -> None:
     elif ws and ws["type"] in available:
         r.offer = worksheets.prepare(store, cfg, now, ws["type"], focus=ws["focus"],
                                      source="ask", run=run)
+    if asked and r.offer is None:  # dropped or failed: the text must not claim it was sent
+        r.reply = f"{r.reply}\n\n{NOT_ATTACHED}"
 
 
 def _apply(store, cfg, now, r: CoachReply, run=subprocess.run) -> None:
@@ -454,11 +458,14 @@ def respond(store, cfg, now, incoming: list[str], run=subprocess.run,
             raise EntryUnanswered("no usable reply")
     for t in incoming:
         store.add_turn("user", t)
-    store.add_turn("coach", r.reply, r.state)
+    stored = r.reply
+    store.add_turn("coach", stored, r.state)
     if refused_shown:
         store.set_meta(_REFUSED, None)
     if parsed:
         _apply(store, cfg, now, r, run)
+        if r.reply != stored:  # a dropped offer added its honest line; keep the turn in step
+            store.set_last_turn_text(r.reply)
     if mode == "rehearsal" and r.state == "crisis":
         end_rehearsal(store, "dropped")  # the coach is speaking now; the role is over
     return r

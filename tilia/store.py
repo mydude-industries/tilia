@@ -140,6 +140,9 @@ class Store:
         self._x("INSERT INTO turns(at,role,text,state) VALUES (?,?,?,?)",
                 (self._clock().isoformat(), role, text, state))
 
+    def set_last_turn_text(self, text) -> None:
+        self._x("UPDATE turns SET text=? WHERE id=(SELECT MAX(id) FROM turns)", (text,))
+
     def last_turn_id(self, role=None) -> int | None:
         if role is None:
             r = self._conn.execute("SELECT MAX(id) m FROM turns").fetchone()

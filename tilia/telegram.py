@@ -14,7 +14,8 @@ REMOVE_KEYBOARD = {"remove_keyboard": True}
 
 def webapp_markup(label: str, url: str) -> dict:
     return {"keyboard": [[{"text": label, "web_app": {"url": url}}]],
-            "one_time_keyboard": True, "resize_keyboard": True}
+            "one_time_keyboard": True, "resize_keyboard": True,
+            "is_persistent": True}
 
 
 @dataclass(frozen=True)
