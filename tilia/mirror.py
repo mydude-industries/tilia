@@ -16,7 +16,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from . import entries, paths
+from . import coach, entries, paths
 
 ALIAS_NAME = "Tilia Mirror.html"
 REPLY = "Open Tilia Mirror on your Mac. It's in your home folder."
@@ -142,7 +142,7 @@ def _happened(e, user_turns) -> str | None:
     return None
 
 
-def _item(e, user_turns, art) -> dict:
+def _item(e, user_turns, art, episode: bool = False) -> dict:
     sheet = _sheet(e.type) if e.type in entries.TYPES else None
     when = _local(e.answered_at) or _local(e.created)
     card = _card(e.card, art) if e.type == "tarot" else None
@@ -171,11 +171,16 @@ def _item(e, user_turns, art) -> dict:
         item["spread"] = _spread(e, sheet, art)
         if item["spread"].pop("paired"):
             item["qa"] = []  # the answers sit with their positions instead
-        # The sealed read gets its own place, but only if they were shown it (the reply
-        # opens with it); a read kept back in a crisis stays unshown here too.
+        # The sealed read gets its own place when they were shown it (the reply opens
+        # with it).
         if e.sealed_read and e.reply and e.sealed_read in e.reply:
             item["read"] = e.sealed_read
             item["reply"] = e.reply.split(e.sealed_read, 1)[1].strip() or None
+    # Fix 4: a read that was held back (a crisis, or a reply that fell back) shows on its
+    # own, labelled as written before they looked; never while a crisis episode is open.
+    if (e.type in entries.TAROT_TYPES and e.sealed_read and "read" not in item
+            and not (e.reply and e.sealed_read in e.reply) and not episode):
+        item["held_read"] = e.sealed_read
     return item
 
 
@@ -204,7 +209,8 @@ def data(store, now) -> dict:
     user_turns = [t for t in store.recent_turns(10**9) if t.role == "user"]
     art: dict[str, str] = {}
     done = [e for e in store.entries(statuses=("done",)) if e.type in entries.TYPES]
-    items = [_item(e, user_turns, art) for e in reversed(done)]  # newest first
+    episode = coach.in_episode(store, now)
+    items = [_item(e, user_turns, art, episode) for e in reversed(done)]  # newest first
     n = now.astimezone()
     return {"made": f"{n:%A} {n.day} {n:%B %Y}, {n:%H:%M}", "patterns": _patterns(store),
             "entries": items, "art": art}
@@ -283,12 +289,29 @@ _HEAD = """<!doctype html>
   --muted: #6f6d67;
   --rule: #d8d5cc;
   --green: #3f6b5a;
-  --blot-paper: #f6f1e6;
+  --blot-paper: #f6f1e6;    /* blots and cards keep their own paper in both modes */
+  --card-ink: #1d1d1b;
+  --shade: 29, 29, 27;
   --serif: "New York", ui-serif, "Iowan Old Style", "Charter", "Noto Serif", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 32px; --s6: 48px;
   --r: 12px; --r-small: 8px;
   --date-col: 52px;
+}
+/* D16: dark, as the worksheet page (webapp/app.css): warm charcoal, cream, the green
+   lifted to 7.5:1 on the ground. Change both together. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #23211d;
+    --paper-sunk: #2c2a25;
+    --ink: #ebe5d6;
+    --ink-soft: #cdc6b6;
+    --muted: #a29c8f;
+    --rule: #45413a;
+    --green: #8cbba5;
+    --shade: 8, 7, 6;
+  }
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -392,7 +415,7 @@ dd { margin: var(--s1) 0 var(--s3); font: 18px/1.4 var(--serif); white-space: pr
    where it's heading to the right */
 .fan { display: flex; }
 .fan > * { flex: none; width: 34px; height: 51px; margin-left: -20px; border-radius: 4px;
-  object-fit: cover; background: var(--blot-paper); box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.10); }
+  object-fit: cover; background: var(--blot-paper); box-shadow: 0 0 0 1px rgba(var(--shade), 0.10); }
 .fan > :first-child { margin-left: 0; }
 /* the same layouts as webapp/app.css (spreads); change both together */
 .spread {
@@ -411,9 +434,10 @@ dd { margin: var(--s1) 0 var(--s3); font: 18px/1.4 var(--serif); white-space: pr
   display: flex; align-items: center; justify-content: center;
   width: var(--cw); aspect-ratio: 2 / 3; overflow: hidden;
   border-radius: 6px; background: var(--blot-paper);
-  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 1px 2px rgba(29, 29, 27, 0.06);
+  box-shadow: 0 0 0 1px rgba(var(--shade), 0.08), 0 1px 2px rgba(var(--shade), 0.06);
 }
 .slot-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.paper-face { background: var(--blot-paper); color: var(--card-ink); }
 .slot-card .paper-face { padding: var(--s1); font: 10px/1.2 var(--serif); }
 .slot-pos { margin-top: var(--s2); font: 14px/1.25 var(--serif); color: var(--ink-soft); text-wrap: balance; }
 .slot-name { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--muted); }
@@ -593,9 +617,10 @@ _RENDER = r"""(function () {
         });
       }
       var t = add(sides, el('section', 'side tilia'));
-      if (e.read) {  // a spread's sealed read first, then what Tilia said after theirs
-        add(t, el('h4', 'label', "Tilia's read, sealed before you looked"));
-        add(t, el('p', 'read', e.read));
+      if (e.read || e.held_read) {  // the sealed read first, then what Tilia said after theirs
+        add(t, el('h4', 'label', e.read ? "Tilia's read, sealed before you looked"
+                                        : "Tilia's read, written before you looked"));
+        add(t, el('p', 'read', e.read || e.held_read));
         if (e.reply) add(t, el('h4', 'label', 'Then Tilia said'));
       } else {
         add(t, el('h4', 'label', 'Tilia'));

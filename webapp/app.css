@@ -1,18 +1,31 @@
 /* Tilia worksheet page. Ink on warm paper; Telegram's theme colors only for the
-   chrome around the sheet (the bar with Back and progress, the desk behind it). */
+   chrome around the sheet (the bar with Back and progress, the desk behind it).
+   Dark (D16): warm charcoal and cream, for late at night. The page follows Telegram's
+   colorScheme (app.js sets data-theme); a plain browser follows prefers-color-scheme.
+   Cards, card backs and blots keep their own paper in both: the --card-* colors. */
 
 :root {
+  color-scheme: light;
   --paper: #fbfaf7;
   --paper-sunk: #f3f1ea;
   --ink: #1d1d1b;
   --ink-soft: #4a4843;
   --muted: #6f6d67;
   --rule: #d8d5cc;
-  --white: #ffffff;
-  --green: #3f6b5a;
+  --face: #ffffff;          /* a control's resting face: taps, steps, the box */
+  --green: #3f6b5a;         /* the accent as text and line */
+  --green-fill: #3f6b5a;    /* the accent as a filled button or a picked tap */
+  --on-green: #ffffff;
   --green-deep: #2c4d40;
   --green-wash: rgba(63, 107, 90, 0.16);
   --amber: #8a5a2b;
+  --placeholder: #a5a29a;
+  --shade: 29, 29, 27;      /* shadow color as r, g, b */
+  --lift: 1;                /* shadow strength: on charcoal a shadow needs more to read */
+
+  --card-paper: #f6f1e6;    /* blot.js paints this same paper */
+  --card-ink: #1d1d1b;
+  --card-ink-soft: #4a4843;
 
   --desk: var(--tg-theme-secondary-bg-color, #ece9e1);
   --chrome-text: var(--tg-theme-text-color, #1d1d1b);
@@ -34,6 +47,60 @@
 
   --top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
   --bottom: var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+/* Contrast on the charcoal (WCAG): cream text 12.8:1, soft 9.5:1, muted 5.9:1 (5.3:1 on a
+   control face), the green as text 7.5:1, cream on the green button 5.5:1. The two blocks
+   below are the same palette: one for a plain browser, one for Telegram's dark theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #23211d;
+    --paper-sunk: #33302b;
+    --ink: #ebe5d6;
+    --ink-soft: #cdc6b6;
+    --muted: #a29c8f;
+    --rule: #45413a;
+    --face: #2c2a25;
+    --green: #8cbba5;
+    --green-fill: #3f6b5a;
+    --on-green: #f4efe3;
+    --green-deep: #24392f;
+    --green-wash: rgba(140, 187, 165, 0.20);
+    --amber: #d6a46d;
+    --placeholder: #8a8478;
+    --shade: 8, 7, 6;
+    --lift: 3;
+    --desk: var(--tg-theme-secondary-bg-color, #181714);
+    --chrome-text: var(--tg-theme-text-color, #ebe5d6);
+    --chrome-link: var(--tg-theme-link-color, #8cbba5);
+    --chrome-hint: var(--tg-theme-hint-color, #7d776c);
+    --chrome-accent: var(--tg-theme-button-color, #8cbba5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #23211d;
+  --paper-sunk: #33302b;
+  --ink: #ebe5d6;
+  --ink-soft: #cdc6b6;
+  --muted: #a29c8f;
+  --rule: #45413a;
+  --face: #2c2a25;
+  --green: #8cbba5;
+  --green-fill: #3f6b5a;
+  --on-green: #f4efe3;
+  --green-deep: #24392f;
+  --green-wash: rgba(140, 187, 165, 0.20);
+  --amber: #d6a46d;
+  --placeholder: #8a8478;
+  --shade: 8, 7, 6;
+  --lift: 3;
+  --desk: var(--tg-theme-secondary-bg-color, #181714);
+  --chrome-text: var(--tg-theme-text-color, #ebe5d6);
+  --chrome-link: var(--tg-theme-link-color, #8cbba5);
+  --chrome-hint: var(--tg-theme-hint-color, #7d776c);
+  --chrome-accent: var(--tg-theme-button-color, #8cbba5);
 }
 
 * { box-sizing: border-box; }
@@ -115,7 +182,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: var(--s5) 20px calc(var(--s4) + var(--bottom));
   background: var(--paper);
   border-radius: 20px 20px 0 0;
-  box-shadow: 0 -1px 0 rgba(29, 29, 27, 0.06);
+  box-shadow: 0 -1px 0 rgba(var(--shade), calc(0.06 * var(--lift)));
 }
 
 .card {
@@ -197,15 +264,15 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 
 /* ---------- the blot ---------- */
 
-/* The blot is its own sheet of paper (blot.js paints the paper color #f6f1e6); before
+/* The blot is its own sheet of paper (blot.js paints the paper color var(--card-paper)); before
    it is drawn the canvas shows that same paper, so nothing jumps when the ink lands. */
 .blot {
   display: block;
   aspect-ratio: 1;
   height: auto;
-  background: #f6f1e6;
+  background: var(--card-paper);
   border-radius: var(--r-small);
-  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.06), 0 1px 2px rgba(29, 29, 27, 0.06);
+  box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.06 * var(--lift))), 0 1px 2px rgba(var(--shade), calc(0.06 * var(--lift)));
 }
 .blot.full {
   width: 100%;
@@ -217,6 +284,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   margin: 0 0 var(--s3);
 }
 
+.help { display: flex; flex-direction: column; }
 .reveal .lead { margin-top: var(--s3); font-family: var(--serif); font-size: 19px; color: var(--ink-soft); }
 
 .nudge {
@@ -256,10 +324,10 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   inset: 0;
   overflow: hidden;
   border-radius: var(--r-small);
-  background: #f6f1e6;
+  background: var(--card-paper);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 2px 6px rgba(29, 29, 27, 0.10);
+  box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.08 * var(--lift))), 0 2px 6px rgba(var(--shade), calc(0.10 * var(--lift)));
 }
 .tarot .face-front { transform: rotateY(180deg); }
 .tarot img, .tarot .drawn-back { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -270,14 +338,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 
 /* The back when the deck has none: ink on the same paper, a ruled frame and a doubled
    diamond, drawn with borders only. */
-.drawn-back { position: relative; background: #f6f1e6; }
+.drawn-back { position: relative; background: var(--card-paper); }
 .drawn-back::before {
   content: "";
   position: absolute;
   inset: 7%;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--card-ink);
   border-radius: 4px;
-  box-shadow: inset 0 0 0 4px #f6f1e6, inset 0 0 0 5px var(--ink-soft);
+  box-shadow: inset 0 0 0 4px var(--card-paper), inset 0 0 0 5px var(--card-ink-soft);
 }
 .drawn-back::after {
   content: "";
@@ -286,9 +354,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   left: 50%;
   width: 30%;
   aspect-ratio: 1;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--card-ink);
   transform: translate(-50%, -50%) rotate(45deg);
-  box-shadow: inset 0 0 0 7px #f6f1e6, inset 0 0 0 8px var(--ink);
+  box-shadow: inset 0 0 0 7px var(--card-paper), inset 0 0 0 8px var(--card-ink);
 }
 
 /* The face when its art won't load: the name, set on the card's paper. */
@@ -299,12 +367,12 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   width: 100%;
   height: 100%;
   padding: var(--s3);
-  background: #f6f1e6;
+  background: var(--card-paper);
   font-family: var(--serif);
   font-size: 24px;
   line-height: 1.25;
   text-align: center;
-  color: var(--ink);
+  color: var(--card-ink);
 }
 .paper-face.tarot-small { font-size: 11px; padding: var(--s1); }
 
@@ -324,8 +392,107 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   margin: 0 0 var(--s3);
   border-radius: 6px;
   object-fit: cover;
-  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 1px 2px rgba(29, 29, 27, 0.06);
+  box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.08 * var(--lift))), 0 1px 2px rgba(var(--shade), calc(0.06 * var(--lift)));
 }
+
+/* ---------- before the reveal (D17) ---------- */
+
+/* The pitch's hero: the card back, the spread face down, or the folded blot, so the
+   first screen is the thing they came for. The opening feeling card keeps it in view. */
+.tease { display: flex; justify-content: center; margin: var(--s2) 0 var(--s4); }
+.pitch .q.promise { font-size: 24px; line-height: 1.3; text-align: center; text-wrap: balance; }
+.pitch .hint.promise-more { text-align: center; font-size: 15px; }
+.pitch-tease { justify-content: flex-start; }
+.pitch-tease .label { text-align: center; }
+
+.back-hero {
+  display: block;
+  width: min(54%, 30vh, 220px);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--r-small);
+  background: var(--card-paper);
+  box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.08 * var(--lift))), 0 2px 6px rgba(var(--shade), calc(0.10 * var(--lift)));
+}
+.back-hero img, .back-hero .drawn-back { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tease-small .back-hero { width: 84px; border-radius: 6px; }
+/* above the opening feeling: small and on the text column, like a card above its question */
+.tease-small { justify-content: flex-start; margin: 0 0 var(--s3); }
+.tease .spread { margin: 0; }
+
+/* The blot, folded: half a sheet of the blot's paper, its ink faint through the back.
+   On its reveal the right half swings open on the fold (the sheet's centre line). */
+.fold {
+  display: block;
+  position: relative;
+  width: min(100%, 58vh);
+  aspect-ratio: 1;
+  margin: var(--s1) auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  perspective: 1600px;
+}
+.fold:disabled { cursor: default; }
+.fold .sheet-in {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: translateX(25%);   /* folded, the half sheet sits centered */
+  transition: transform 720ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.fold.open .sheet-in { transform: none; }
+.fold .half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  overflow: hidden;
+  background: var(--card-paper);
+}
+.fold .half-left { left: 0; border-radius: var(--r-small) 0 0 var(--r-small); }
+.fold .flap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 50%;
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  transform: translateZ(1px) rotateY(-180deg);   /* folded over, just above the left half */
+  transition: transform 720ms cubic-bezier(0.3, 0.6, 0.2, 1);
+}
+.fold.open .flap { transform: none; }
+/* Once open, one whole blot, no seam: the left half shows all of it, the flap steps away. */
+.fold.settled .half-left { width: 100%; border-radius: var(--r-small); }
+.fold.settled .half-left .blot { width: 100%; }
+.fold.settled .flap { visibility: hidden; }
+.fold .flap .half { left: 0; width: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.fold .flap .half-front { border-radius: 0 var(--r-small) var(--r-small) 0; }
+.fold .flap .half-back { transform: rotateY(180deg); border-radius: var(--r-small) 0 0 var(--r-small); }
+.fold .half-left canvas, .fold .half-back canvas { left: 0; }
+.fold .half-front canvas { left: -100%; }
+.fold .half { box-shadow: 0 1px 2px rgba(var(--shade), calc(0.08 * var(--lift))); }
+.blot.in-fold { position: absolute; top: 0; height: 100%; width: 200%; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.fold .half-back canvas, .folded canvas { opacity: 0.13; filter: blur(1.5px); }
+.fold:active:not(:disabled) .sheet-in { transform: translateX(25%) scale(0.985); }
+@media (prefers-reduced-motion: reduce) {
+  .fold .sheet-in, .fold .flap { transition: none; }
+}
+
+/* the folded sheet on its own: the pitch and the opening feeling card */
+.folded {
+  position: relative;
+  width: min(34%, 26vh, 150px);
+  aspect-ratio: 1 / 2;
+  overflow: hidden;
+  border-radius: var(--r-small);
+  background: var(--card-paper);
+  box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.06 * var(--lift))), 0 1px 2px rgba(var(--shade), calc(0.08 * var(--lift)));
+}
+.folded .blot.in-fold { left: 0; }
+.tease-small .folded { width: 52px; }
 
 /* ---------- spreads ---------- */
 /* The mirror (tilia/mirror.py) lays spreads out the same way; change both together. */
@@ -359,8 +526,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   aspect-ratio: 2 / 3;
   overflow: hidden;
   border-radius: 6px;
-  background: #f6f1e6;
-  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 1px 2px rgba(29, 29, 27, 0.06);
+  background: var(--card-paper);
+  box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.08 * var(--lift))), 0 1px 2px rgba(var(--shade), calc(0.06 * var(--lift)));
 }
 .slot-card img, .slot-card .drawn-back { display: block; }
 .slot-card img, .slot-card .drawn-back, .slot-card .paper-face {
@@ -458,14 +625,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: 10px var(--s3);
   border: 1px solid var(--rule);
   border-radius: 999px;
-  background: var(--white);
+  background: var(--face);
   font-size: 16px;
   line-height: 1.25;
   text-align: left;
   transition: background-color 120ms ease-out, transform 120ms ease-out;
 }
 .chip:active { transform: scale(0.97); }
-.chip[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: var(--white); }
+.chip[aria-pressed="true"] { background: var(--green-fill); border-color: var(--green-fill); color: var(--on-green); }
 
 /* Taps on a text card: whole sentences, so a stacked list rather than pills. Same
    paper-white face, hairline and radius as the 0-10 steps; picked, the same green. */
@@ -476,7 +643,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: 12px 14px;
   border: 1px solid var(--rule);
   border-radius: var(--r-small);
-  background: var(--white);
+  background: var(--face);
   font-size: 16px;
   line-height: 1.3;
   text-align: left;
@@ -484,7 +651,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   transition: background-color 120ms ease-out, transform 120ms ease-out;
 }
 .tap:active { transform: scale(0.98); }
-.tap[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: var(--white); }
+.tap[aria-pressed="true"] { background: var(--green-fill); border-color: var(--green-fill); color: var(--on-green); }
 .starters .tap .more { color: var(--muted); }
 .starters .tap[aria-pressed="true"] .more { color: inherit; opacity: 0.75; }
 
@@ -512,12 +679,12 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: 12px 14px;
   border: 1px solid var(--rule);
   border-radius: var(--r);
-  background: var(--white);
+  background: var(--face);
   color: var(--ink);
   font: 17px/1.45 var(--sans);
   resize: vertical;
 }
-.box::placeholder { color: #a5a29a; }
+.box::placeholder { color: var(--placeholder); }
 .box:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px var(--green-wash); }
 
 .left {
@@ -530,8 +697,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .left.low { color: var(--amber); }
 
 /* 0-10 as two rows of a keypad (0-5 over 6-10): eleven steps in one row are under
-   44px wide on a phone. The short second row sits centered under the first. */
-.scale { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
+   44px wide on a phone. The short second row sits to the right, so 10 ends the scale
+   at the right edge over "10 is good", and "0 is low" sits under 0's column (v0.2.1 fix 5). */
+.scale { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
 
 .step {
   flex: 0 0 calc((100% - 5 * var(--s2)) / 6);
@@ -540,7 +708,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: 0;
   border: 1px solid var(--rule);
   border-radius: var(--r-small);
-  background: var(--white);
+  background: var(--face);
   font-size: 16px;
   font-variant-numeric: tabular-nums;
   transition: background-color 120ms ease-out, transform 120ms ease-out;
@@ -551,7 +719,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   .step { flex-basis: calc((100% - 5 * var(--s1)) / 6); min-width: 0; }
 }
 .step:active { transform: scale(0.95); }
-.step[aria-checked="true"] { background: var(--green); border-color: var(--green); color: var(--white); }
+.step[aria-checked="true"] { background: var(--green-fill); border-color: var(--green-fill); color: var(--on-green); }
 /* The closing card's scale: a tick under the number they started at. */
 .step.was { position: relative; }
 .step.was::after {
@@ -564,7 +732,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   border-radius: 1px;
   background: var(--green);
 }
-.step.was[aria-checked="true"]::after { background: var(--white); }
+.step.was[aria-checked="true"]::after { background: var(--on-green); }
 
 .ends {
   display: flex;
@@ -594,8 +762,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: 14px var(--s3);
   border: 0;
   border-radius: var(--r);
-  background: var(--green);
-  color: var(--white);
+  background: var(--green-fill);
+  color: var(--on-green);
   font-size: 17px;
   font-weight: 600;
   box-shadow: 0 2px 0 var(--green-deep), inset 0 1px 0 rgba(255, 255, 255, 0.12);

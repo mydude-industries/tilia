@@ -98,3 +98,41 @@ def test_node_suite():
     assert files
     r = subprocess.run(["node", "--test", *files], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_dark_mode_follows_telegram_and_the_browser():
+    """D16: Telegram's colorScheme (and its changes) sets data-theme; a plain browser falls
+    to prefers-color-scheme. Both carry the same dark palette, and card paper never turns."""
+    css = (WEB / "app.css").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'tg.onEvent("themeChanged", applyTheme)' in js and "tg.colorScheme" in js
+    media = re.search(r'@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{(.*?)\}\s*\}', css, re.S)
+    tg = re.search(r':root\[data-theme="dark"\] \{(.*?)\}', css, re.S)
+    assert media and tg
+    norm = lambda block: sorted(line.strip() for line in block.strip().splitlines())  # noqa: E731
+    assert norm(media.group(1)) == norm(tg.group(1))
+    assert "--paper: #23211d" in tg.group(1) and "--ink: #ebe5d6" in tg.group(1)
+    assert "--card-paper" not in tg.group(1)  # cards and blots keep their paper
+    assert "--card-paper: #f6f1e6;" in css    # blot.js's own paper
+    for name in re.findall(r"^\s*(--[a-z0-9-]+):", css, re.M):  # no token defined by itself
+        assert not re.search(rf"{name}:\s*var\({name}\)", css), name
+
+
+def test_the_reveal_is_teased_from_the_first_screen():
+    """D17, in the owner's words."""
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    for line in ("One quick check-in, then flip your tarot card. We'll both share our readings!",
+                 "One quick check-in, then flip your cards. We'll both share our readings!",
+                 "A fresh blot, made only for you. One quick check-in, then open it."):
+        assert f'"{line}"' in js
+    css = (WEB / "app.css").read_text(encoding="utf-8")
+    assert ".fold.open .flap { transform: none; }" in css
+    assert re.search(r"prefers-reduced-motion: reduce\) \{\s*\.fold \.sheet-in, \.fold \.flap \{ transition: none; \}", css)
+
+
+def test_blot_first_card_why_promises_no_hidden_meaning():
+    import json
+    sheet = json.loads((WEB / "worksheets" / "blot.json").read_text(encoding="utf-8"))
+    first = next(c for c in sheet["cards"] if c["id"] == "first")
+    assert first["why"] == "Whatever you see first is a good place to start talking from."
+    assert all("options" not in c and "option_mode" not in c for c in sheet["cards"])

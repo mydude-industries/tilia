@@ -131,10 +131,10 @@ def test_docs_say_tilia_texts_first_and_how_to_change_it():
             assert needle in flat
 
 
-def test_version_is_0_2_0():
+def test_version_is_0_2_1():
     import tomllib
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert meta["project"]["version"] == "0.2.0"
+    assert meta["project"]["version"] == "0.2.1"
 
 
 # ---- worksheets, cards, blots and the mirror ------------------------------------------

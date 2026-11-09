@@ -87,3 +87,11 @@ def install(run=subprocess.run, machine: str | None = None) -> str | None:
     finally:
         part.unlink(missing_ok=True)
     return None
+
+
+def remove() -> None:
+    """Delete the installed binary (and any half-written copy). Setup calls this when the
+    binary fails its signature or notarization check, so it is never kept, never run, and
+    the next run of setup downloads a fresh one."""
+    for f in (paths.codex_bin(), paths.codex_bin_dir() / "codex.new"):
+        f.unlink(missing_ok=True)

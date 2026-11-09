@@ -1,6 +1,6 @@
 {
   "type": "urge_log",
-  "v": 2,
+  "v": 3,
   "title": "Look at an urge",
   "pitch": "About 2 minutes. Looking closely at one urge, what it pushed for and what it promised, makes it easier to choose your move next time instead of being pushed into it.",
   "cards": [
@@ -33,10 +33,10 @@
       "option_mode": "answer",
       "options": [
         "Send a message I'd regret",
-        "Say something sharp",
+        "Say something sharp to hurt back",
         "Check their phone or socials",
         "Shut down and go quiet",
-        "Walk out"
+        "Walk out of the room"
       ]
     },
     {

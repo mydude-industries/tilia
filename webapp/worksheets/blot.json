@@ -1,6 +1,6 @@
 {
   "type": "blot",
-  "v": 2,
+  "v": 3,
   "title": "Ink blot",
   "pitch": "A blot of ink, folded and opened, made only for you. Look at it and say what you see. There are no right answers.",
   "cards": [
@@ -35,15 +35,9 @@
       "kind": "text",
       "short": "what I saw first",
       "prompt": "What do you see first?",
-      "why": "The first thing you see shows up before you've thought about it.",
+      "why": "Whatever you see first is a good place to start talking from.",
       "personal": false,
-      "max_chars": 300,
-      "option_mode": "starter",
-      "options": [
-        "I see…",
-        "It looks like…",
-        "Something like…"
-      ]
+      "max_chars": 300
     },
     {
       "id": "else",
@@ -52,13 +46,7 @@
       "prompt": "Look again. What else do you see?",
       "why": "A second look often finds what the first one walked past.",
       "personal": false,
-      "max_chars": 300,
-      "option_mode": "starter",
-      "options": [
-        "Now I see…",
-        "In the white space…",
-        "Upside down it's…"
-      ]
+      "max_chars": 300
     },
     {
       "id": "feel",
@@ -86,15 +74,7 @@
       "prompt": "Say a little more about that feeling.",
       "why": "Putting it into words can show you where else you've felt it.",
       "personal": false,
-      "max_chars": 300,
-      "option_mode": "answer",
-      "options": [
-        "It reminds me of someone",
-        "It feels familiar",
-        "It came out of nowhere",
-        "It's hard to put into words",
-        "It's been with me all day"
-      ]
+      "max_chars": 300
     },
     {
       "id": "mood_end",

@@ -1,6 +1,6 @@
 {
   "type": "spread_relationship",
-  "v": 2,
+  "v": 3,
   "title": "Relationship spread",
   "pitch": "Three cards about you and someone in your life: you, them, and the space between. You read each one first, then see the read Tilia wrote before you looked. Not a prediction.",
   "cards": [
@@ -38,12 +38,12 @@
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
       "max_chars": 250,
-      "option_mode": "starter",
+      "option_mode": "answer",
       "options": [
-        "It reminds me of…",
-        "What stands out is…",
-        "Here it feels like…",
-        "I see…"
+        "It names something I've been avoiding",
+        "It feels true to my life right now",
+        "It reminds me of someone close to me",
+        "It doesn't land for me"
       ]
     },
     {
@@ -62,12 +62,12 @@
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
       "max_chars": 250,
-      "option_mode": "starter",
+      "option_mode": "answer",
       "options": [
-        "It reminds me of…",
-        "What stands out is…",
-        "Here it feels like…",
-        "I see…"
+        "It names something I've been avoiding",
+        "It feels true to my life right now",
+        "It reminds me of someone close to me",
+        "It doesn't land for me"
       ]
     },
     {
@@ -86,12 +86,12 @@
       "why": "What a card says to you in this spot is the read that counts.",
       "personal": false,
       "max_chars": 250,
-      "option_mode": "starter",
+      "option_mode": "answer",
       "options": [
-        "It reminds me of…",
-        "What stands out is…",
-        "Here it feels like…",
-        "I see…"
+        "It names something I've been avoiding",
+        "It feels true to my life right now",
+        "It reminds me of someone close to me",
+        "It doesn't land for me"
       ]
     },
     {
@@ -102,11 +102,13 @@
       "why": "The links you see between the cards often say the most.",
       "personal": false,
       "max_chars": 300,
-      "option_mode": "starter",
+      "option_mode": "answer",
       "options": [
-        "Together they feel…",
-        "What keeps returning is…",
-        "The strongest one is…"
+        "They all seem to point the same way",
+        "They pull me in different directions",
+        "One card says more than the others",
+        "Together they feel heavier than apart",
+        "I don't see a link between them yet"
       ]
     },
     {

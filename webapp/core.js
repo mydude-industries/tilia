@@ -82,9 +82,12 @@
     }
     var options = wording.options;
     if (options && typeof options === "object") {
-      out.cards.forEach(function (c) {
-        // R25: only answer cards are tailored; a card's sentence starters stay generic
-        if (c.personal !== true || c.kind !== "text" || c.option_mode !== "answer") return;
+      out.cards.forEach(function (c, n) {
+        // R25: only answer cards are tailored; a card's sentence starters stay generic.
+        // D15: personal cards, and the answer card right after each drawn card (its taps
+        // are written for that card; the Mac's entries.card_answer_ids).
+        var drawn = n > 0 && out.cards[n - 1].kind === "reveal";
+        if ((c.personal !== true && !drawn) || c.kind !== "text" || c.option_mode !== "answer") return;
         var o = Object.prototype.hasOwnProperty.call(options, c.id)
           ? cleanOptions(options[c.id], c.option_mode) : null;
         if (o) c.options = o;

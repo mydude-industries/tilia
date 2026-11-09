@@ -232,6 +232,7 @@ def test_mirror_spread_read_only_when_it_was_shown(store):
     done(store, "spread_cross", spread_answers("spread_cross", ["a", "b", "c", "d", "e"]),
          card=".".join(cross), reply="Are you safe right now?")
     store._x("UPDATE entries SET sealed_read=?", (SEALED,))  # kept, never shown (crisis)
+    store.set_meta("crisis_last", (NOW - timedelta(hours=2)).isoformat())  # still open
     [item] = data_of(mirror.render(store, NOW))["entries"]
     assert "read" not in item and item["reply"] == "Are you safe right now?"
     assert [s["pos"] for s in item["spread"]["slots"]] == entries.SPREADS["spread_cross"]
@@ -398,3 +399,60 @@ def test_uninstall_removes_only_an_alias_into_the_data_folder(tmp_path):
     assert not alias.is_symlink()
 
     uninstall()  # nothing there: still fine
+
+
+# ---- v0.2.1 fix 4: a read that was held back shows once it's safe ----------------------
+
+HELD_LABEL = "Tilia's read, written before you looked"
+
+
+@pytest.mark.parametrize("type_,card", [("tarot", "00-the-fool"),
+                                        ("spread_three", ".".join(THREE))])
+def test_mirror_shows_a_held_back_read_once_the_episode_is_over(store, type_, card):
+    answers = ([4, None, "a dog", "Denver", [], "", 6] if type_ == "tarot"
+               else spread_answers(type_, ["a", "b", "c"]))
+    done(store, type_, answers, card=card, reply="Are you safe right now?")
+    store._x("UPDATE entries SET sealed_read=?", (SEALED,))
+    # during the episode: kept, never shown
+    store.set_meta("crisis_last", (NOW - timedelta(hours=2)).isoformat())
+    html = mirror.render(store, NOW)
+    [item] = data_of(html)["entries"]
+    assert "held_read" not in item and "read" not in item and SEALED not in html
+    # the episode ended (24 h after the last crisis reply): the read shows, labelled
+    store.set_meta("crisis_last", (NOW - timedelta(hours=25)).isoformat())
+    html = mirror.render(store, NOW)
+    [item] = data_of(html)["entries"]
+    assert item["held_read"] == SEALED and "read" not in item
+    assert item["reply"] == "Are you safe right now?"
+    assert HELD_LABEL in mirror._RENDER
+
+
+def test_mirror_shows_a_read_held_back_by_a_reply_fallback(store):
+    done(store, "tarot", [4, None, "a dog", "Denver", [], "", 6], card="00-the-fool",
+         reply="I couldn't put a proper reply together for that one.")
+    store._x("UPDATE entries SET sealed_read=?", (SEALED,))
+    [item] = data_of(mirror.render(store, NOW))["entries"]
+    assert item["held_read"] == SEALED
+
+
+def test_mirror_never_doubles_a_read_that_was_shown(store):
+    reply = f"Here's the read I wrote before you looked:\n\n{SEALED}\n\nYou saw it too."
+    done(store, "tarot", [4, None, "a dog", "Denver", [], "", 6], card="00-the-fool",
+         reply=reply)
+    store._x("UPDATE entries SET sealed_read=?", (SEALED,))
+    [item] = data_of(mirror.render(store, NOW))["entries"]
+    assert "held_read" not in item and item["reply"] == reply
+
+
+def test_mirror_follows_the_dark_setting_and_keeps_card_paper(store):
+    """D16: the mirror follows prefers-color-scheme: warm charcoal and cream, the same
+    green lifted for contrast; blots and cards stay on their own paper."""
+    done(store, "blot", BLOT, seed=777)
+    html = mirror.render(store, NOW)
+    dark = re.search(r"@media \(prefers-color-scheme: dark\) \{\s*:root \{(.*?)\}", html, re.S)
+    assert dark, "no dark palette"
+    block = dark.group(1)
+    for token in ("color-scheme: dark", "--paper: #23211d", "--ink: #ebe5d6", "--green: #8cbba5"):
+        assert token in block
+    assert "--blot-paper" not in block
+    assert re.search(r"\.paper-face \{[^}]*color: var\(--card-ink\)", html)

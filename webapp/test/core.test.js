@@ -167,6 +167,49 @@ test("applyWording takes tailored options for personal answer cards only", () =>
   assert.deepEqual(TAPS.cards[2].options, ["They're upset with me", "I messed up", "I don't know"]);
 });
 
+// D15: a drawn card's "what does this one say" taps are written for that card. The page
+// takes them for the answer card right after each reveal (the Mac's card_answer_ids).
+const SPREAD = {
+  type: "spread_three", v: 3, title: "T", pitch: "p",
+  cards: [
+    { id: "pitch", kind: "pitch", prompt: "p", personal: false },
+    { id: "mood_start", kind: "mood", prompt: "m", personal: false, min: 0, max: 10 },
+    { id: "card_1", kind: "reveal", prompt: "Past", personal: false },
+    { id: "says_1", kind: "text", prompt: "What does it say?", personal: false, max_chars: 180,
+      option_mode: "answer", options: ["Generic a", "Generic b", "It doesn't land for me"] },
+    { id: "card_2", kind: "reveal", prompt: "Now", personal: false },
+    { id: "happened", kind: "text", prompt: "What happened?", personal: false, max_chars: 300,
+      option_mode: "starter", options: ["They said…", "Then…", "It started when…"] },
+    { id: "where_more", kind: "text", prompt: "More?", personal: false, max_chars: 300,
+      option_mode: "answer", options: ["Tight", "Heavy", "Restless"] },
+  ],
+};
+const CUPS = ["A friend I've been missing", "The table I used to cook at", "Being welcome somewhere",
+              "It doesn't land for me"];
+
+test("applyWording takes a drawn card's own options for the answer card right after it", () => {
+  const out = C.applyWording(SPREAD, { options: {
+    says_1: CUPS, where_more: CUPS, mood_start: CUPS, card_1: CUPS,
+    happened: ["Then…", "They said…", "So…"] } });
+  assert.deepEqual(out.cards[3].options, CUPS);
+  assert.deepEqual(out.cards[5].options, SPREAD.cards[5].options);  // starters stay generic
+  assert.deepEqual(out.cards[6].options, SPREAD.cards[6].options);  // not right after a card
+  assert.equal(out.cards[1].options, undefined);
+  assert.equal(out.cards[2].options, undefined);
+  assert.deepEqual(SPREAD.cards[3].options, ["Generic a", "Generic b", "It doesn't land for me"]);
+});
+
+test("applyWording leaves a free-form card without options", () => {
+  const blot = { type: "blot", v: 3, title: "T", pitch: "p", cards: [
+    { id: "pitch", kind: "pitch", prompt: "p", personal: false },
+    { id: "blot", kind: "reveal", prompt: "Look", personal: false },
+    { id: "first", kind: "text", prompt: "What do you see first?", personal: false, max_chars: 300 },
+  ] };
+  const out = C.applyWording(blot, { options: { first: CUPS } });
+  assert.equal(out.cards[2].options, undefined);
+  assert.equal(out.cards[2].option_mode, undefined);
+});
+
 test("applyWording keeps the generic options when the tailored ones don't fit the rules", () => {
   for (const bad of [
     MINE.slice(0, 2), MINE.concat(["a", "b", "c"]), MINE.slice(0, 2).concat(["x".repeat(81)]),

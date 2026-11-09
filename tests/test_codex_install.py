@@ -132,3 +132,15 @@ def test_reinstall_replaces_the_binary_atomically(monkeypatch):
     monkeypatch.setattr(codex_install, "ASSETS", pinned("arm64", payload))
     assert codex_install.install(run=curl_that_writes(payload), machine="arm64") is None
     assert paths.codex_bin().read_bytes() == b"new"
+
+
+def test_remove_deletes_the_unverified_binary():
+    """v0.2.1 fix 1: a binary that failed its signature check is removed, so the next run
+    of setup downloads a fresh copy instead of checking the same bad file again."""
+    final = paths.codex_bin()
+    final.parent.mkdir(parents=True, exist_ok=True)
+    final.write_bytes(b"unverified")
+    (final.parent / "codex.new").write_bytes(b"half")
+    codex_install.remove()
+    assert not final.exists() and not (final.parent / "codex.new").exists()
+    codex_install.remove()  # nothing there: still fine

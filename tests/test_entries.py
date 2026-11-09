@@ -160,7 +160,7 @@ def test_every_text_card_is_tap_first(type_):
     sheet = entries.load_sheet(type_)
     assert sheet["v"] >= 2  # every sheet changed in Task 17
     for c in sheet["cards"]:
-        if c["kind"] != "text":
+        if c["kind"] != "text" or type_ == "blot":  # D15: a blot is free form
             assert "options" not in c and "option_mode" not in c, c["id"]
             continue
         opts = c["options"]
@@ -441,3 +441,122 @@ def test_spread_payload_fits(type_, ch):
     obj = entries.parse_payload(data)
     assert obj is not None
     assert entries.validate_answers(sheet, obj["answers"]) == answers
+
+
+# ---- v0.2.1 (D15): starters only on facts cards, card answers, free-form blots ----------
+
+FACTS_CARDS = {("check_story", "happened"), ("week_back", "hard")}
+
+
+def test_starters_only_on_facts_cards():
+    """D15: a sentence starter only where they say what happened; everywhere else the
+    taps are whole answers."""
+    starters = {(t, c["id"]) for t in entries.TYPES for c in entries.load_sheet(t)["cards"]
+                if c.get("option_mode") == "starter"}
+    assert starters == FACTS_CARDS
+
+
+@pytest.mark.parametrize("type_", [t for t in entries.TYPES if t != "blot"])
+def test_generic_answers_are_complete_thoughts(type_):
+    """D15: a generic tap reads as a whole thought, never a two-word fragment."""
+    for c in entries.load_sheet(type_)["cards"]:
+        if c.get("option_mode") == "answer":
+            for o in c["options"]:
+                assert len(o.split()) >= 4, (type_, c["id"], o)
+
+
+def test_blot_is_free_form():
+    sheet = entries.load_sheet("blot")
+    assert sheet["v"] >= 3
+    texts = [c for c in sheet["cards"] if c["kind"] == "text"]
+    assert len(texts) == 3
+    for c in texts:
+        assert "options" not in c and "option_mode" not in c, c["id"]
+
+
+def test_blot_text_cards_may_not_carry_options(tmp_path, monkeypatch):
+    pitch, mood, text, mood2 = _base()
+    free = {k: v for k, v in text.items() if k not in ("options", "option_mode")}
+    sheet = {"type": "blot", "v": 3, "title": "T", "pitch": "p",
+             "cards": [pitch, mood, free, mood2]}
+    (tmp_path / "blot.json").write_text(json.dumps(sheet))
+    monkeypatch.setattr(entries, "SHEET_DIR", tmp_path)
+    assert "options" not in entries.load_sheet("blot")["cards"][2]
+    sheet["cards"][2] = text
+    (tmp_path / "blot.json").write_text(json.dumps(sheet))
+    with pytest.raises(ValueError):
+        entries.load_sheet("blot")
+    _write(tmp_path, monkeypatch, [pitch, mood, free, mood2])  # elsewhere taps are required
+    with pytest.raises(ValueError):
+        entries.load_sheet("check_story")
+
+
+@pytest.mark.parametrize("type_,ids", [
+    ("tarot", ["notice"]),
+    ("spread_three", ["says_1", "says_2", "says_3"]),
+    ("spread_cross", ["says_1", "says_2", "says_3", "says_4", "says_5"]),
+    ("spread_relationship", ["says_1", "says_2", "says_3"]),
+    ("check_story", []), ("blot", []),
+])
+def test_card_answer_ids(type_, ids):
+    """The "what does this one say" card is the text card right after each drawn card."""
+    sheet = entries.load_sheet(type_)
+    assert entries.card_answer_ids(sheet) == ids
+    for c in sheet["cards"]:
+        if c["id"] in ids:
+            assert c["option_mode"] == "answer" and c["personal"] is False
+            assert entries.NOT_LANDING in c["options"] and len(c["options"]) == 4
+
+
+@pytest.mark.parametrize("type_", list(entries.TAROT_TYPES))
+def test_card_sheets_bumped_and_together_is_answers(type_):
+    sheet = entries.load_sheet(type_)
+    assert sheet["v"] >= 3
+    for c in sheet["cards"]:
+        if c["id"] == "together":
+            assert c["option_mode"] == "answer" and 4 <= len(c["options"]) <= 5
+
+
+CARD_OPTS = ["It's the part of me that wants to go", "The leap feels too early",
+             "It looks like how I acted last spring", entries.NOT_LANDING]
+
+
+def test_clean_card_options_keeps_four_with_not_landing():
+    sheet = entries.load_sheet("spread_three")
+    raw = {"says_1": CARD_OPTS, "says_2": CARD_OPTS[:3], "together": CARD_OPTS,
+           "zz": CARD_OPTS, "says_3": "nope"}
+    out = entries.clean_card_options(sheet, raw)
+    # says_2 had no "It doesn't land for me": it is added; ids that aren't cards drop
+    assert out == {"says_1": CARD_OPTS, "says_2": CARD_OPTS}
+
+
+@pytest.mark.parametrize("bad", [
+    CARD_OPTS[:2],                                    # too few real ones
+    CARD_OPTS[:2] + ["x" * 81],                       # too long
+    CARD_OPTS[:2] + ["two\nlines"],                   # not one line
+    [CARD_OPTS[0], CARD_OPTS[0], CARD_OPTS[1]],       # repeats
+    [7, 8, 9],
+])
+def test_clean_card_options_drops_bad(bad):
+    sheet = entries.load_sheet("tarot")
+    assert entries.clean_card_options(sheet, {"notice": bad}) is None
+
+
+def test_clean_card_options_trims_extra_and_moves_not_landing_last():
+    sheet = entries.load_sheet("tarot")
+    raw = {"notice": [entries.NOT_LANDING, "a one", "b two", "c three", "d four",
+                      "it doesn’t land for me."]}
+    assert entries.clean_card_options(sheet, raw) == {
+        "notice": ["a one", "b two", "c three", entries.NOT_LANDING]}
+    assert entries.clean_card_options(sheet, "junk") is None
+    curly = {"notice": ["a one", "It doesn’t land for me", "b two", "c three"]}
+    assert entries.clean_card_options(sheet, curly) == {
+        "notice": ["a one", "b two", "c three", entries.NOT_LANDING]}
+
+
+def test_clean_wording_takes_card_options_only_when_asked():
+    sheet = entries.load_sheet("tarot")
+    raw = {"options": {"notice": CARD_OPTS}}
+    assert entries.clean_wording(sheet, raw) is None  # personalize never tailors them
+    assert entries.clean_wording(sheet, raw, card_options=True) == {
+        "options": {"notice": CARD_OPTS}}

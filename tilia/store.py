@@ -263,6 +263,9 @@ class Store:
                 if (types is None or r["type"] in types)
                 and (statuses is None or r["status"] in statuses)]
 
+    def set_wording(self, id, wording) -> None:
+        self._x("UPDATE entries SET wording=? WHERE id=?", (_dumps(wording), id))
+
     def set_sealed_read(self, id, text) -> bool:
         return self._x("UPDATE entries SET sealed_read=? WHERE id=? AND sealed_read IS NULL",
                        (text, id)).rowcount > 0

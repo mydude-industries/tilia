@@ -74,7 +74,9 @@ class FakeIO:
         self.codex_signed = kw.get("codex_signed", True)        # codesign --verify passes
         self.codex_signer_ok = kw.get("codex_signer_ok", True)  # the Authority is OpenAI's
         self.codex_notarized = kw.get("codex_notarized", True)  # spctl says accepted
+        self.codex_check_slow = kw.get("codex_check_slow", ())  # "codesign"/"spctl" time out
         self.codex_install_problem = kw.get("codex_install_problem")  # None = download works
+        self.removed_codex = 0
         self._codex_email = kw.get("codex_email", "maya@example.com")
         self._codex_sessions = list(kw.get("codex_sessions", []))
         self.installs = 0
@@ -138,6 +140,8 @@ class FakeIO:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         if name == "codex":
             raise AssertionError(f"setup must not run codex itself: {cmd}")
+        if cmd[0] in self.codex_check_slow:
+            raise subprocess.TimeoutExpired(cmd, 60)
         if cmd[:3] == ["codesign", "--verify", "--strict"]:
             return SimpleNamespace(returncode=0 if self.codex_signed else 1, stdout="", stderr="")
         if cmd[:2] == ["codesign", "-dvv"]:
@@ -201,6 +205,10 @@ class FakeIO:
             return self.codex_install_problem
         self._codex_installed = True
         return None
+
+    def remove_codex(self):
+        self.removed_codex += 1
+        self._codex_installed = False
 
     def codex_email(self):
         return self._codex_email
@@ -983,6 +991,58 @@ def test_reentry_restarts_the_agent_even_if_she_walks_away(state):
     io = FakeIO([], installed=True)  # EOF at the first prompt
     assert run(state, io, redo="texts") == 0
     assert io.runs == [["stop-agent"], ["scripts/install.sh"]]
+
+
+OLD_KEY = "987654321:AAH" + "y" * 32
+
+
+def test_quitting_setup_bot_before_pairing_keeps_the_old_bot(state):
+    """v0.2.1 fix 3: a new key with the old chat must never run. Walking away after the
+    new key is saved but before the phone is paired puts the old key back and restarts
+    Tilia exactly as it was."""
+    _finished(state)
+    io = FakeIO(["n", "", GOOD], installed=True)  # no code arrives; EOF at "for a new code"
+    io.tokens = [OLD_KEY]
+    assert run(state, io, redo="bot") == 0
+    assert io.tokens == [OLD_KEY, GOOD, OLD_KEY]  # the new key was saved, then undone
+    assert config.load().chat_id == 4242
+    assert done_steps(state) == list(STEPS)  # as before ./setup bot
+    assert io.runs[0] == ["stop-agent"] and io.runs[-1] == ["scripts/install.sh"]
+    assert io.runs.count(["scripts/install.sh"]) == 1
+    t = _flat(io.text())
+    assert "Tilia kept your old bot, since your phone isn't paired with the new one yet." in t
+    assert "Run ./setup bot to switch." in t and "Paused." not in t
+
+
+def test_quitting_setup_bot_with_no_old_key_leaves_tilia_stopped(state):
+    _finished(state)
+    io = FakeIO(["n", "", GOOD], installed=True)  # Keychain had no key to go back to
+    assert run(state, io, redo="bot") == 0
+    assert io.tokens == [GOOD]
+    assert ["scripts/install.sh"] not in io.runs  # never the new key with the old chat
+    assert "make_bot" in done_steps(state) and "pair_phone" not in done_steps(state)
+    assert "Tilia stays stopped until your phone is paired with the new bot, so run " \
+           "./setup to finish." in _flat(io.text())
+
+
+def test_quitting_setup_bot_before_a_new_key_restarts_as_it_was(state):
+    _finished(state)
+    io = FakeIO(["n", ""], installed=True)  # EOF at the key prompt
+    io.tokens = [OLD_KEY]
+    assert run(state, io, redo="bot") == 0
+    assert io.tokens == [OLD_KEY] and io.runs[-1] == ["scripts/install.sh"]
+    assert "kept your old bot" not in io.text()
+
+
+def test_quitting_setup_bot_after_pairing_restarts_with_the_new_bot(state, monkeypatch):
+    import tilia.setup_wizard as sw
+    monkeypatch.setattr(sw.secrets, "randbelow", lambda n: 418207)
+    _finished(state)
+    io = FakeIO(["n", "", GOOD, "y"], installed=True, tg_updates=[[U(9, 4343, "418207")]])
+    io.tokens = [OLD_KEY]
+    assert run(state, io, redo="bot") == 0  # EOF at keep_running's battery question
+    assert io.tokens == [OLD_KEY, GOOD] and config.load().chat_id == 4343
+    assert io.runs[-1] == ["scripts/install.sh"]
 
 
 def test_first_setup_never_stops_an_agent(state):

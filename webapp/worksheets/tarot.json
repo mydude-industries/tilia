@@ -1,6 +1,6 @@
 {
   "type": "tarot",
-  "v": 2,
+  "v": 3,
   "title": "Tarot card",
   "pitch": "One card, drawn just for you. You read it first, then Tilia shows you the read it wrote before you looked. Not a prediction: a way in to what's on your mind.",
   "cards": [
@@ -38,11 +38,12 @@
       "why": "What catches your eye first often has something to do with you.",
       "personal": false,
       "max_chars": 300,
-      "option_mode": "starter",
+      "option_mode": "answer",
       "options": [
-        "I notice…",
-        "My eye goes to…",
-        "It reminds me of…"
+        "The figure looks like how I feel right now",
+        "Something in it feels hopeful to me",
+        "It feels heavier than I expected",
+        "It doesn't land for me"
       ]
     },
     {
@@ -56,7 +57,7 @@
       "option_mode": "answer",
       "options": [
         "Something between me and someone close",
-        "A choice I keep putting off",
+        "A choice I keep putting off making",
         "How tired I've been lately",
         "Something I'm afraid to lose",
         "I'm not sure yet"
@@ -90,8 +91,8 @@
       "option_mode": "answer",
       "options": [
         "It's tight, like holding my breath",
-        "It feels heavy",
-        "It's restless",
+        "It feels heavy, like something I'm carrying",
+        "It's restless, like I need to move",
         "It's soft, almost a relief",
         "I can't really feel it"
       ]

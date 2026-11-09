@@ -687,8 +687,10 @@ def test_give_up_is_honest_and_keeps_the_sealed_read_unshown(store, fool):
     assert said.role == "coach" and said.text == worksheets.GAVE_UP
     assert worksheets.reply_due(store) == []
     assert [a.status for a in store.all_assignments()] == ["done"]
-    page = json.dumps(mirror.data(store, NOW))
-    assert SEALED not in page and "the little dog at his heels" in page  # not shown; answers kept
+    page = mirror.data(store, NOW)
+    # fix 4: never in the reply, so the mirror shows it on its own, labelled; answers kept
+    assert page["entries"][0]["held_read"] == SEALED
+    assert "the little dog at his heels" in json.dumps(page)
 
 
 def test_empty_deck_falls_back_to_blot(store, monkeypatch):
@@ -945,7 +947,7 @@ def test_spread_stance():
     flat = " ".join(spread_sys().split())
     assert "prompts for honest thinking, not prediction" in flat
     assert "if nothing changes" in flat.lower()
-    assert '{"read": "..."}' in flat
+    assert '{"read": "...", "options": {' in flat
 
 
 STORY_V1 = [3, "Riley went quiet at Sunday dinner", "that I'd said something wrong", 70,
@@ -995,3 +997,150 @@ def test_unpaired_spread_still_names_its_cards(store, deck5):
     for pos, name in zip(entries.SPREADS["spread_three"], names):
         assert f"{pos}: {name}" in body
     assert "the river" in body
+
+
+# ---- v0.2.1 (D15): the sealed-read call also writes each card's own answer taps -------
+
+FOOL_OPTS = ["The little dog, trying to warn him", "He's about to step off without looking",
+             "It's the part of me that wants Denver", entries.NOT_LANDING]
+
+
+def test_tarot_seal_writes_the_cards_own_taps(store, fool):
+    calls = []
+    profile.write("Sam is weighing a move to Denver.")
+    say(store, fake(ASK_TAROT, calls=calls, read={"read": SEALED, "options": {"notice": FOOL_OPTS}}),
+        text="pull me a card")
+    [prompt] = [p for s, p in calls if s == tarot_sys()]
+    assert "<answer_cards>\nnotice: The Fool\n</answer_cards>" in prompt
+    [e] = store.entries()
+    assert e.sealed_read == SEALED and e.wording == {"options": {"notice": FOOL_OPTS}}
+    url = url_of(box(store)[0])
+    assert fragment(url) == {"options": {"notice": FOOL_OPTS}}
+    assert worksheets.offer_for(store, e).url == url  # "again" sends the same taps
+
+
+def test_tarot_seal_taps_join_the_personalized_wording(store, fool):
+    ask = coach_json("Drew you one.", worksheet={"type": "tarot", "focus": "the Denver move"})
+    wording = {"prompts": {"touches": "Where does it meet the Denver move?"},
+               "options": {"touches": ["Leaving Riley behind", "The new job offer",
+                                       "Being scared to want it"],
+                           "notice": ["personalize", "never writes", "these taps"]}}
+    say(store, fake(ask, wording=wording,
+                    read={"read": SEALED, "options": {"notice": FOOL_OPTS}}),
+        text="pull me a card about Denver")
+    [e] = store.entries()
+    assert e.wording["prompts"] == wording["prompts"]
+    assert e.wording["options"] == {"notice": FOOL_OPTS,
+                                    "touches": wording["options"]["touches"]}
+    assert fragment(url_of(box(store)[0])) == e.wording
+
+
+@pytest.mark.parametrize("opts", [None, "junk", {"notice": ["only", "two"]},
+                                  {"notice": ["x" * 81, "a b", "c d"]}, {"touches": FOOL_OPTS}])
+def test_tarot_seal_bad_taps_keep_the_generic_ones(store, fool, opts):
+    read = {"read": SEALED} if opts is None else {"read": SEALED, "options": opts}
+    say(store, fake(ASK_TAROT, read=read), text="pull me a card")
+    [e] = store.entries()
+    assert e.sealed_read == SEALED and e.wording is None
+    assert "#tw=" not in url_of(box(store)[0])
+
+
+def test_spread_seal_writes_taps_for_every_card(store, deck5):
+    calls = []
+    opts = {f"says_{n}": [f"Card {n} feels like home", f"Card {n} looks unfinished",
+                          f"Card {n} is about Riley"] for n in range(1, 6)}
+    ask = coach_json("Laid out five for you.", worksheet={"type": "spread_cross", "focus": None})
+    say(store, fake(ask, calls=calls, spread={"read": SPREAD_SEALED, "options": opts}),
+        text="do a 5-card read")
+    [prompt] = [p for s, p in calls if s == spread_sys()]
+    [e] = store.entries()
+    rows = prompt.split("<answer_cards>\n", 1)[1].split("\n</answer_cards>", 1)[0].splitlines()
+    for n, (row, pos, cid) in enumerate(zip(rows, entries.SPREADS["spread_cross"],
+                                            e.card.split(".")), 1):
+        assert row == f"says_{n}: {pos}: {entries.card_info(cid)['name']}"
+    assert len(rows) == 5
+    want = {k: v + [entries.NOT_LANDING] for k, v in opts.items()}
+    assert e.wording == {"options": want} == fragment(url_of(box(store)[0]))
+
+
+def test_spread_taps_fit_the_fragment_cap(store, deck5):
+    long = {f"says_{n}": [("é" * 78) + str(k) for k in range(3)] for n in range(1, 6)}
+    worksheets.prepare(store, cfg(), NOW, "spread_cross",
+                       run=fake(coach_json("x"), spread={"read": SPREAD_SEALED, "options": long}))
+    [e] = store.entries()
+    size = len(json.dumps(e.wording, ensure_ascii=False, separators=(",", ":")).encode())
+    assert size <= entries.WORDING_BYTES
+    kept = list(e.wording["options"])
+    assert 0 < len(kept) < 5 and kept == [f"says_{n}" for n in range(1, len(kept) + 1)]
+
+
+def test_seal_ai_down_keeps_generic_taps(store, fool, monkeypatch):
+    def boom(*a, **k):
+        raise LimitError("resets 3pm")
+    monkeypatch.setattr(worksheets.ai, "ask_json", boom)
+    offer = worksheets.prepare(store, cfg(), NOW, "tarot")
+    assert store.entry_by_token(offer.token).wording is None and "#tw=" not in offer.url
+
+
+def test_read_prompts_ask_for_card_taps():
+    for text in (tarot_sys(), spread_sys()):
+        flat = " ".join(text.split())
+        assert '"options"' in flat and "ANSWER CARDS" in flat
+        assert f'"{entries.NOT_LANDING}"' in flat
+        assert "80 characters" in flat and "never predict" in flat.lower()
+
+
+# ---- v0.2.1 (D15): a real blot read, compared with their past blots ---------------------
+
+def done_blot(store, saw, when):
+    eid = store.add_entry("blot", entries.new_token(), "ask", seed=1000 + len(store.entries()))
+    store.answer_entry(eid, [4, None, saw, "", [], "", 5], 4, 5)
+    store.finish_entry(eid, "a reply", ["rest"], None)
+    store._x("UPDATE entries SET answered_at=? WHERE id=?", (when.isoformat(), eid))
+    return eid
+
+
+def blot_prompt(store, eid):
+    e = store.get_entry(eid)
+    return coach.build_prompt(store, cfg(), NOW, ["[ink blot] x"], mode="entry", entry=e)
+
+
+def test_blot_entry_shows_their_past_blots(store):
+    for n in range(6):
+        done_blot(store, f"saw number {n}", NOW - timedelta(days=10 - n))
+    tarot = store.add_entry("tarot", entries.new_token(), "ask", card="00-the-fool")
+    store.answer_entry(tarot, [4, None, "a dog", "", [], "", 5], 4, 5)
+    store.finish_entry(tarot, "a reply", [], None)
+    token = entries.new_token()
+    eid = store.add_entry("blot", token, "ask", seed=1234567)
+    assert worksheets.accept(store, NOW, payload(token, type="blot", answers=BLOT_ANSWERS)) == "ok"
+    p = blot_prompt(store, eid)
+    assert "PAST BLOTS (their last 5 before this one, oldest first)" in p
+    past = p.split("<past_blots>\n", 1)[1].split("\n</past_blots>", 1)[0].splitlines()
+    assert len(past) == 5
+    for n, row in zip(range(1, 6), past):
+        assert f"saw number {n}" in row and "Ink blot" in row
+    assert "saw number 0" not in p.split("<past_blots>", 1)[1]
+    assert "a moth with torn wings" not in "\n".join(past)  # this blot is not its own past
+    assert p.index("<entry>") < p.index("<past_blots>")
+
+
+def test_first_blot_says_there_are_none_yet(store):
+    token = entries.new_token()
+    eid = store.add_entry("blot", token, "ask", seed=1234567)
+    worksheets.accept(store, NOW, payload(token, type="blot", answers=BLOT_ANSWERS))
+    p = blot_prompt(store, eid)
+    assert "<past_blots>\n(none: this is their first blot)\n</past_blots>" in p
+    e = open_entry(store)
+    worksheets.accept(store, NOW, payload(e.token))
+    other = coach.build_prompt(store, cfg(), NOW, ["x"], mode="entry", entry=store.get_entry(e.id))
+    assert "PAST BLOTS" not in other  # only a blot gets them
+
+
+def test_coach_gives_a_real_blot_read():
+    sec = " ".join(COACH_SYS.split("# Answering a worksheet", 1)[1].split("\n# ", 1)[0].split())
+    [blot] = [s for s in sec.split("- ") if s.startswith("For a blot")]
+    for want in ("interpret", "white space", "first", "PAST BLOTS", "push back",
+                 "never score", "never diagnose", '"this means you are'):
+        assert want in blot, want
+    assert "Rorschach" not in blot or "never call it" in blot

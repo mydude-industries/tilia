@@ -22,6 +22,22 @@
   var deck = [];       // tarot/manifest.json: id, name, file, symbols per card
   var turned = {};     // index into cards -> that reveal's card has been turned over
   var reveals = [];    // a spread's reveal cards, one per position, in order
+  var nudged = {};     // index into cards -> how many "Help me see it" nudges are showing
+
+  /* ---------- light or dark (D16) ---------- */
+
+  // Inside Telegram the page follows its colorScheme, and changes with it. A plain browser
+  // gets no data-theme, so app.css follows prefers-color-scheme.
+  function applyTheme() {
+    try {
+      document.documentElement.setAttribute("data-theme",
+        tg.colorScheme === "dark" ? "dark" : "light");
+    } catch (e) { /* keep the light page */ }
+  }
+  if (tg && !plain) {
+    applyTheme();
+    try { tg.onEvent("themeChanged", applyTheme); } catch (e) { /* older client */ }
+  }
 
   /* ---------- small helpers ---------- */
 
@@ -262,6 +278,12 @@
     var own = el("button", "own", "Write my own");
     own.type = "button";
     var last = box.value;
+    // No taps (a blot's cards are free form): just the box, open from the start.
+    var free = !(card.options || []).length;
+    if (free) {
+      taps.hidden = own.hidden = true;
+      wrap.classList.add("open");
+    }
 
     function count() {
       var bytes = C.remaining(launch, answers);
@@ -452,12 +474,17 @@
 
   // The canvas goes in with the card; the blot is drawn after the card has painted
   // (about 30 ms on a laptop, longer on a phone), and once per seed: drawBlot caches it.
-  function blotCanvas(cls) {
+  // `part`: a piece of a fold, described by the fold around it, not on its own.
+  function blotCanvas(cls, part) {
     var c = el("canvas", "blot " + cls);
     c.width = window.TiliaBlot.SIZE;
     c.height = window.TiliaBlot.SIZE;
-    c.setAttribute("role", "img");
-    c.setAttribute("aria-label", "An ink blot, mirrored down the middle");
+    if (part) {
+      c.setAttribute("aria-hidden", "true");
+    } else {
+      c.setAttribute("role", "img");
+      c.setAttribute("aria-label", "An ink blot, mirrored down the middle");
+    }
     requestAnimationFrame(function () {
       setTimeout(function () {
         try {
@@ -469,20 +496,25 @@
     return c;
   }
 
+  // The nudges shown so far stay put when they go Back and return (v0.2.1 fix 6).
   function helpToSee(nudges) {
     var frag = document.createDocumentFragment();
     var b = el("button", "why", "Help me see it");
     b.type = "button";
     var p = el("p", "nudge");
-    p.hidden = true;
     p.setAttribute("role", "status");
-    var n = 0;
+    var key = at;
+    function show() {
+      var n = nudged[key] || 0;
+      p.hidden = !n;
+      p.textContent = n ? nudges[n - 1] : "";
+      b.hidden = n >= nudges.length;
+    }
     b.addEventListener("click", function () {
-      p.textContent = nudges[n];
-      p.hidden = false;
-      n += 1;
-      if (n === nudges.length) b.hidden = true;
+      nudged[key] = Math.min(nudges.length, (nudged[key] || 0) + 1);
+      show();
     });
+    show();
     frag.appendChild(p);
     frag.appendChild(b);
     return frag;
@@ -654,6 +686,7 @@
     var lead = el("p", "hint lead", card.prompt);
     s.appendChild(lead);
     var help = el("div", "help");
+    if (card.why) help.appendChild(whyToggle(card));
     help.appendChild(helpToSee(cardNudges(id)));
     s.appendChild(help);
     var next = el("button", "next", "Next");
@@ -696,24 +729,113 @@
       renderTarotReveal(s, card, launch.card);
       return s;
     }
-    s.appendChild(blotCanvas("full"));
-    s.appendChild(el("p", "hint lead", card.prompt));
-    s.appendChild(helpToSee(NUDGES));
+    renderBlotReveal(s, card);
+    return s;
+  }
+
+  /* The blot comes folded: one tap opens the sheet on its fold (D17). Three drawings of
+     the one blot (drawBlot caches it): the left half, the right half on the flap's face,
+     and its ink faint through the flap's back. */
+  function renderBlotReveal(s, card) {
+    var open = !!turned[at];
+    var fold = el("button", "fold" + (open ? " open" : ""));
+    fold.type = "button";
+    var inner = el("span", "sheet-in");
+    var left = el("span", "half half-left");
+    left.appendChild(blotCanvas("in-fold", true));
+    var flap = el("span", "flap");
+    var face = el("span", "half half-front");
+    face.appendChild(blotCanvas("in-fold", true));
+    var back = el("span", "half half-back");
+    back.appendChild(blotCanvas("in-fold", true));
+    flap.appendChild(face);
+    flap.appendChild(back);
+    inner.appendChild(left);
+    inner.appendChild(flap);
+    fold.appendChild(inner);
+    s.appendChild(fold);
+
+    var tap = el("p", "hint lead", "Tap the sheet to open it.");
+    s.appendChild(tap);
+    var lead = el("p", "hint lead", card.prompt);
+    s.appendChild(lead);
+    var help = el("div", "help");
+    if (card.why) help.appendChild(whyToggle(card));
+    help.appendChild(helpToSee(NUDGES));
+    s.appendChild(help);
     var next = el("button", "next", "Next");
     next.type = "button";
     next.addEventListener("click", function () { go(at + 1); });
     s.appendChild(next);
-    return s;
+
+    function show() {
+      fold.classList.toggle("open", open);
+      fold.classList.toggle("settled", open && settled);
+      fold.disabled = open;
+      fold.setAttribute("aria-label", open ? "An ink blot, mirrored down the middle"
+        : "A folded sheet with ink showing through. Tap to open it.");
+      tap.hidden = open;
+      lead.hidden = help.hidden = next.hidden = !open;
+    }
+    var settled = open;  // came back to it: already open, no unfolding
+    fold.addEventListener("click", function () {
+      open = turned[at] = true;
+      show();
+      var still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      setTimeout(function () { settled = true; show(); }, still ? 0 : 760);
+    });
+    show();
   }
 
   /* ---------- screens ---------- */
 
+  /* D17: a card, a spread or a blot is the hero from the first screen. The owner's
+     words; only the opening feeling comes before the turn. */
+  var PROMISES = {
+    tarot: "One quick check-in, then flip your tarot card. We'll both share our readings!",
+    spread: "One quick check-in, then flip your cards. We'll both share our readings!",
+    blot: "A fresh blot, made only for you. One quick check-in, then open it.",
+  };
+
+  function promise() {
+    return isTarot() ? PROMISES.tarot : isSpread() ? PROMISES.spread
+      : isBlot() ? PROMISES.blot : null;
+  }
+
+  // What they're about to turn over, still face down: big on the pitch, small above the
+  // opening feeling.
+  function tease(small) {
+    var box = el("div", "tease" + (small ? " tease-small" : ""));
+    if (isTarot()) {
+      var b = el("span", "back-hero");
+      b.setAttribute("role", "img");
+      b.setAttribute("aria-label", "Your card, face down");
+      b.appendChild(cardBack());
+      box.appendChild(b);
+    } else if (isSpread()) {
+      box.appendChild(spreadMap(small ? "mini" : "down"));
+    } else {
+      var f = el("div", "folded");
+      f.setAttribute("role", "img");
+      f.setAttribute("aria-label", "A folded sheet with ink showing faintly through");
+      f.appendChild(blotCanvas("in-fold", true));
+      box.appendChild(f);
+    }
+    return box;
+  }
+
   function renderPitch(card) {
-    var s = el("div", "card pitch");
+    var said = promise();
+    var s = el("div", "card pitch" + (said ? " pitch-tease" : ""));
     s.appendChild(el("p", "label", sheet.title));
-    s.appendChild(el("h1", "q", card.prompt));
-    if (isSpread()) s.appendChild(spreadMap("down"));
-    s.appendChild(el("p", "hint", asked.length + " short cards. Skip any you like."));
+    if (said) {
+      s.appendChild(tease(false));
+      s.appendChild(el("h1", "q promise", said));
+      s.appendChild(el("p", "hint promise-more", card.prompt));
+    } else {
+      s.appendChild(el("h1", "q", card.prompt));
+      s.appendChild(el("p", "hint", asked.length + " short cards. Skip any you like."));
+    }
     var go1 = el("button", "next", "Begin");
     go1.type = "button";
     go1.addEventListener("click", function () { go(1); });
@@ -725,6 +847,8 @@
     var i = answerIndex(card);
     var s = el("div", "card");
     s.appendChild(el("p", "label", (i + 1) + " of " + asked.length + " · " + card.short));
+    // Before the turn (the opening feeling), what they're about to turn over stays in view.
+    if (promise() && at < firstReveal()) s.appendChild(tease(true));
     // A blot's questions keep the blot in view, small, above the question.
     if (isBlot() && card.kind !== "mood") s.appendChild(blotCanvas("small"));
     // and a card's, once it has been turned over

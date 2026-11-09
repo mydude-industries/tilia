@@ -90,6 +90,8 @@ def _show_offer(store, offer) -> None:
     if e.wording:
         for k, v in (e.wording.get("prompts") or {}).items():
             print(f"  {k} ({len(v)} chars): {v}")
+        for k, opts in (e.wording.get("options") or {}).items():
+            print(f"  taps {k}: " + " | ".join(f"{o} ({len(o)})" for o in opts))
     print("[url]", offer.url)
     print("[sealed read]", e.sealed_read if e.sealed_read is not None else "(none)")
 

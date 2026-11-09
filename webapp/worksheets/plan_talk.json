@@ -1,6 +1,6 @@
 {
   "type": "plan_talk",
-  "v": 2,
+  "v": 3,
   "title": "Plan the talk",
   "pitch": "About 3 minutes. A hard talk tends to end the way it starts, so this helps you plan a soft opening, the one thing you want heard, and how to pause before it turns into a fight.",
   "cards": [
@@ -47,12 +47,12 @@
       "why": "Starting with how you feel, not what they did, makes it easier for them to listen.",
       "personal": true,
       "max_chars": 300,
-      "option_mode": "starter",
+      "option_mode": "answer",
       "options": [
-        "I feel nervous, but…",
-        "I've been feeling…",
-        "I miss it when…",
-        "Could you help me…"
+        "I feel nervous about this, but I want us to talk about it.",
+        "I've been feeling far from you lately, and I miss us.",
+        "I feel hurt about what happened, and I need us to talk it through.",
+        "I'm stressed about this, and I need us to make a plan together."
       ]
     },
     {

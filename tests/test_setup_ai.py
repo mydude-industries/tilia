@@ -113,6 +113,44 @@ def test_a_bad_signature_means_one_sentence_no_run_and_a_choice(state, kw, why):
     assert "Using Claude instead." in io.text()
     assert config.load().provider == "claude"
     assert [c.provider for c in io.ai_cfgs] == ["claude"]
+    assert io.removed_codex == 1  # fix 1: the unverified binary is gone
+
+
+@pytest.mark.parametrize("slow", [("codesign",), ("spctl",)])
+def test_a_signature_check_that_times_out_keeps_the_binary_and_asks_to_rerun(state, slow):
+    """A slow Mac's codesign or spctl timing out is not a failed check: the binary stays,
+    Codex is never run unverified, and she is asked to run the check again."""
+    write_state(state, AT_4)
+    io = FakeIO(["1", "r"], codex_installed=True, codex_logged_in=True, codex_check_slow=slow)
+    run(state, io)
+    t = _flat(io.text())
+    assert "Apple's check of the Codex program timed out, so Tilia hasn't run it." in t
+    assert "Run ./setup again to check it again" in t
+    assert "won't run it" not in t
+    assert io.removed_codex == 0 and io.codex_installed()
+    assert codex_runs(io) == []
+    assert "claude_login" not in done_steps(state)
+    io2 = FakeIO(["1", "", ""], codex_installed=True, codex_logged_in=True)
+    run(state, io2)  # the re-run checks the same binary again, and it passes
+    assert io2.installs == 0 and config.load().provider == "chatgpt"
+
+
+def test_a_rerun_after_a_bad_signature_downloads_fresh(state):
+    write_state(state, AT_4)
+    io = FakeIO(["1", "r"], codex_installed=True, codex_logged_in=True, codex_signed=False)
+    run(state, io)
+    assert io.removed_codex == 1 and io.installs == 0 and not io.codex_installed()
+    io2 = FakeIO(["1", "", ""], codex_installed=io.codex_installed(), codex_logged_in=True)
+    run(state, io2)
+    assert io2.installs == 1 and config.load().provider == "chatgpt"
+
+
+def test_real_io_remove_codex_uses_codex_install(monkeypatch):
+    import tilia.setup_wizard as sw
+    seen = []
+    monkeypatch.setattr(sw.codex_install, "remove", lambda: seen.append(1))
+    sw.RealIO().remove_codex()
+    assert seen == [1]
 
 
 def test_missing_codex_is_downloaded_from_the_pinned_release_then_verified(state):

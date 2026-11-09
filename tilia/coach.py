@@ -11,6 +11,7 @@ from .claude import CoachReply, parse_coach
 TURNS_IN_PROMPT = 40
 SIGNAL_DAYS = 7
 DIGEST_N = 8  # finished entries in the coach prompt
+PAST_BLOTS = 5  # earlier blots shown with a new one (D15)
 DIGEST_COMPACT = 300
 EPISODE_GAP = timedelta(hours=24)
 SUMMARY_MAX_TURNS = 200
@@ -286,11 +287,12 @@ def _reveal_row(entry, card: dict, cid: str | None, rows: list) -> None:
             rows.append(f"The card they drew: {name}{num}, upright")
 
 
-def _entry(entry) -> str:
+def _entry(entry, store=None) -> str:
     """The worksheet they just filled out: each question as they saw it (personalized or
     generic), their answer, and how they felt before and after. A blot is named by its
     seed and palette; a card by its name (a spread's cards each in their position), followed
-    by the read sealed before they looked."""
+    by the read sealed before they looked. A blot is followed by their last PAST_BLOTS
+    earlier blots (D15), when the store is given."""
     from . import entries
     sheet = entries.load_sheet(entry.type)
     mine = (entry.wording or {}).get("prompts") or {}
@@ -320,6 +322,12 @@ def _entry(entry) -> str:
                 + _tag("sealed_read", entry.sealed_read))
     elif entry.type in entries.TAROT_TYPES:
         out += "\n\n" + NO_SEALED_READ
+    if entry.type == "blot" and store is not None:  # D15: the read compares it with these
+        past = [e for e in store.entries(types=("blot",), statuses=("done",))
+                if e.id != entry.id][-PAST_BLOTS:]
+        out += (f"\n\nPAST BLOTS (their last {PAST_BLOTS} before this one, oldest first)\n"
+                + _tag("past_blots", "\n".join(entry_line(e, _entry_day(e)) for e in past),
+                       "(none: this is their first blot)"))
     return out
 
 
@@ -357,7 +365,7 @@ def build_prompt(store, cfg, now, incoming: list[str], mode: str = "chat", entry
         crisis,
     ]
     if mode == "entry":
-        parts.append(_entry(entry))
+        parts.append(_entry(entry, store))
     parts += [
         "NEW MESSAGES (from the person, oldest first; answer these)\n"
         + _tag("new_messages", "\n".join(incoming)),

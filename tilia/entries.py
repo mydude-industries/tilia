@@ -39,6 +39,11 @@ OPTIONS_MIN, OPTIONS_MAX = 3, 5
 ELLIPSIS = "…"
 STARTER_WORDS = 4  # R25: a starter is the first few words only, never what happened
 WORDING_BYTES = 1800  # the personalized wording as compact UTF-8 JSON, before base64
+# D15: a drawn card's own answer taps (written by the sealed-read call) are 4, and one of
+# them is always this plain way out.
+NOT_LANDING = "It doesn't land for me"
+CARD_OPTIONS = 4
+FREE_FORM = ("blot",)  # D15: sheets whose text cards take no taps at all
 _ID = re.compile(r"[A-Za-z0-9_-]{12}")
 _CARD_ID = re.compile(r"[a-z0-9_]+")
 
@@ -94,6 +99,10 @@ def _check_sheet(type_: str, sheet) -> None:
                 bad(f"card {cid} needs max_chars up to {TEXT_MAX}")
             total += m
             mode = c.get("option_mode")
+            if type_ in FREE_FORM:  # D15: no taps at all, only their own words
+                if "options" in c or "option_mode" in c:
+                    bad(f"card {cid}: a {type_} card is free form, with no options")
+                continue
             opts = _options(c.get("options"), mode)
             if mode not in OPTION_MODES or opts is None or opts != c["options"]:
                 bad(f"card {cid} needs {OPTIONS_MIN}-{OPTIONS_MAX} one-line options of up to "
@@ -247,10 +256,46 @@ def _size(wording: dict) -> int:
     return len(json.dumps(wording, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
-def clean_wording(sheet: dict, raw) -> dict | None:
+def card_answer_ids(sheet: dict) -> list[str]:
+    """D15: the "what does this one say" cards of a tarot entry or a spread: the text card
+    right after each drawn card. Their taps are written for the card by the sealed-read
+    call (clean_card_options), never by personalize."""
+    if sheet.get("type") not in TAROT_TYPES:
+        return []
+    cards = sheet["cards"]
+    return [b["id"] for a, b in zip(cards, cards[1:])
+            if a["kind"] == "reveal" and b["kind"] == "text" and b.get("option_mode") == "answer"]
+
+
+def _plain(s: str) -> str:
+    return s.strip().rstrip(".!").replace("\u2019", "'").lower()
+
+
+def clean_card_options(sheet: dict, raw) -> dict | None:
+    """D15: the sealed-read call's taps for each drawn card, kept only when they are safe
+    to show: per card, CARD_OPTIONS distinct one-line taps of up to OPTION_MAX characters,
+    the last always NOT_LANDING (added if missing; extras are cut). A card whose taps fail
+    keeps the sheet's generic ones. None if nothing is kept."""
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for cid in card_answer_ids(sheet):
+        opts = raw.get(cid)
+        if not isinstance(opts, list):
+            continue
+        own = [o for o in opts if not (isinstance(o, str) and _plain(o) == _plain(NOT_LANDING))]
+        own = _options(own[:CARD_OPTIONS - 1], "answer") if len(own) >= CARD_OPTIONS - 1 \
+            else None
+        if own is not None:
+            out[cid] = own + [NOT_LANDING]
+    return out or None
+
+
+def clean_wording(sheet: dict, raw, card_options: bool = False) -> dict | None:
     """Tilia's wording for one entry, kept only where it is safe to show: the pitch, the
     prompts of personal cards, and tap options for personal text cards (starters only on
-    starter cards). Options go first, last card first, if the whole is over WORDING_BYTES."""
+    starter cards). With card_options (the sealed-read call, D15), the drawn cards' own
+    answer taps too. Options go first, last card first, if the whole is over WORDING_BYTES."""
     if not isinstance(raw, dict):
         return None
     out: dict = {}
@@ -267,9 +312,10 @@ def clean_wording(sheet: dict, raw) -> dict | None:
     options = raw.get("options")
     if isinstance(options, dict):
         kept = {}
+        tailored = set(personal) | (set(card_answer_ids(sheet)) if card_options else set())
         for c in sheet["cards"]:  # in card order, so the size cut drops the last ones
             # R25: only answer cards are tailored; a starter card's starters stay generic
-            if (c["id"] in personal and c.get("kind") == "text"
+            if (c["id"] in tailored and c.get("kind") == "text"
                     and c.get("option_mode") == "answer" and c["id"] in options):
                 o = _options(options[c["id"]], "answer")
                 if o:

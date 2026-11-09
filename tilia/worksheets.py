@@ -122,20 +122,36 @@ def _cards_section(entry) -> tuple[str, str, int] | None:
             + coach._tag("card", _card_text(infos[0])), "tarot_read", READ_MAX)
 
 
+def _answer_cards(entry, sheet) -> str:
+    """D15: the cards whose answer taps the sealed-read call writes, one row each:
+    `<card id>: [<position>: ]<card name>`, in the order they're drawn."""
+    ids = entries.card_answer_ids(sheet)
+    names = [(entries.card_info(c) or {}).get("name", c) for c in entries.card_ids(entry.card)]
+    positions = entries.SPREADS.get(entry.type)
+    rows = [f"{cid}: {positions[n] + ': ' if positions else ''}{name}"
+            for n, (cid, name) in enumerate(zip(ids, names))]
+    return ("ANSWER CARDS (the card id where they say what each card says to them: write its "
+            "taps)\n" + coach._tag("answer_cards", "\n".join(rows)))
+
+
 def seal(store, cfg, now, entry, run=subprocess.run) -> None:
     """Write Tilia's own read of the entry's card or spread before they look, and store it
     once (D5, D13). An entry that already has a read keeps it: no call is made. A failed
     call, the AI being down (limit, login, missing CLI) or unreadable output leaves it NULL,
     and the cards still go out: the coach says so plainly when it answers. As with
-    personalize, the coach's reply has already succeeded, so nothing here may undo it."""
+    personalize, the coach's reply has already succeeded, so nothing here may undo it.
+    The same call writes each card's own answer taps (D15), kept in the entry's wording
+    under the same rules and cap; without them the sheet's generic taps show."""
     entry = store.get_entry(entry.id)
     section = _cards_section(entry)
     if entry.sealed_read is not None or section is None:
         return
     cards, system, limit = section
+    sheet = entries.load_sheet(entry.type)
     prompt = "\n\n".join([
         coach.DATA_NOTE,
         cards,
+        _answer_cards(entry, sheet),
         "PROFILE (your working notes on this person)\n"
         + coach._tag("profile", profile.read(), "(empty)"),
         coach._conversation(store),
@@ -148,6 +164,12 @@ def seal(store, cfg, now, entry, run=subprocess.run) -> None:
     read = raw.get("read") if isinstance(raw, dict) else None
     if isinstance(read, str) and read.strip() and len(read.strip()) <= limit:
         store.set_sealed_read(entry.id, read.strip())
+    taps = entries.clean_card_options(sheet, raw.get("options")) if isinstance(raw, dict) \
+        else None
+    if taps:
+        wording = dict(entry.wording or {})
+        wording["options"] = {**(wording.get("options") or {}), **taps}
+        store.set_wording(entry.id, entries.clean_wording(sheet, wording, card_options=True))
 
 
 def _draw_for(type: str) -> tuple[str, list[dict] | None]:
@@ -184,6 +206,7 @@ def prepare(store, cfg, now, type: str, *, focus=None, source="ask", assignment_
                           assignment_id=assignment_id, turn_id=store.last_turn_id())
     if cid:
         seal(store, cfg, now, store.get_entry(eid), run)
+        wording = store.get_entry(eid).wording  # with the cards' own taps, if written
     return make_offer(sheet, token, card=cid, seed=seed, wording=wording)
 
 

@@ -74,6 +74,7 @@ CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
 # codex_install.py; this is the identity the binary must carry before Tilia ever runs it.
 CODEX_SIGNER = "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
 CHATGPT_RETRY = {"r": "later", "c": "claude"}
+SIGNATURE_TIMED_OUT = "timed out"  # codesign/spctl gave no answer in time
 CHATGPT_MODELS = {"1": "gpt-6-luna", "2": "gpt-6.1-sol"}
 CLAUDE_MODELS = {"1": "sonnet", "2": "opus"}
 CLAUDE_ACCOUNT = ("Check this is your own Claude account: run `claude`, type /status,",
@@ -226,6 +227,12 @@ class Wizard:
         self.bot_name = ""
         self.restarted = False  # keep_running (or the end of a re-run) started the agent
         self.redo: tuple = ()   # the steps a re-run asked for (run() sets it)
+        # v0.2.1 fix 3: a new bot key saved in this run, and the key it replaced, so a
+        # run that stops before the phone is paired never restarts with the new key and
+        # the old chat (see _keep_old_bot).
+        self.new_key = False
+        self.old_key: str | None = None
+        self.paired = False
 
     def screen(self, step: str, lines: list[str]) -> None:
         n, title, minutes = META[step]
@@ -353,8 +360,14 @@ class Wizard:
             if not me:
                 self.ui.fail("Telegram didn't accept that key, so copy the whole key from BotFather and paste it again.")
                 continue
+            if not self.new_key:
+                try:
+                    self.old_key = self.io.get_token()
+                except RuntimeError:  # no key yet (or Keychain locked): nothing to go back to
+                    self.old_key = None
             try:
                 self.io.set_token(token)
+                self.new_key = True
             except ValueError:
                 self.ui.fail("That key has an unusual shape, so copy it again from BotFather.")
                 continue
@@ -408,6 +421,7 @@ class Wizard:
                 config.save(cfg)
                 # The loop must not treat the code as her first message.
                 self.io.save_offset(self._tg_offset)
+                self.paired = True
                 self.ui.ok("Your phone is connected")
                 return True
             if result == "too_many":
@@ -524,7 +538,12 @@ class Wizard:
                 return self._chatgpt_failed(f"The Codex download {problem}, so Tilia hasn't "
                                             "installed it; check your internet connection.")
         problem = self._codex_signature_problem(str(paths.codex_bin()))
+        if problem == SIGNATURE_TIMED_OUT:  # a slow Mac, not a bad binary: keep it, never run it
+            return self._chatgpt_failed("Apple's check of the Codex program timed out, so Tilia "
+                                        "hasn't run it. Run ./setup again to check it again; "
+                                        "your Mac may just have been busy.")
         if problem:
+            self.io.remove_codex()  # never kept: a re-run downloads a fresh copy
             return self._chatgpt_failed(f"The downloaded Codex program {problem}, so Tilia "
                                         "won't run it.")
         self.ui.ok(f"Codex {codex_install.RELEASE[6:]} is installed, signed by OpenAI and "
@@ -532,27 +551,32 @@ class Wizard:
         return "ok"
 
     def _codex_signature_problem(self, path) -> str | None:
+        """None when the binary is OpenAI's, signed and notarized; else why not, or
+        SIGNATURE_TIMED_OUT when codesign or spctl didn't answer in time (not a verdict)."""
         if not path:
             return "can't be found"
 
-        def run(cmd):
+        def run(cmd):  # a timeout propagates: it is no answer, not a failed check
             try:
                 return self.io.run(cmd, capture_output=True, text=True, timeout=60)
-            except (OSError, ValueError, subprocess.TimeoutExpired):
+            except (OSError, ValueError):
                 return None
 
         def text(r):
             return (r.stdout or "") + (r.stderr or "")
-        r = run(["codesign", "--verify", "--strict", path])
-        if r is None or r.returncode != 0:
-            return "fails Apple's signature check"
-        r = run(["codesign", "-dvv", path])
-        if r is None or r.returncode != 0 or f"Authority={CODEX_SIGNER}" not in text(r):
-            return "isn't signed by OpenAI"
-        r = run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature",
-                 "-v", path])
-        if r is None or r.returncode != 0 or "accepted" not in text(r):
-            return "isn't notarized by Apple"
+        try:
+            r = run(["codesign", "--verify", "--strict", path])
+            if r is None or r.returncode != 0:
+                return "fails Apple's signature check"
+            r = run(["codesign", "-dvv", path])
+            if r is None or r.returncode != 0 or f"Authority={CODEX_SIGNER}" not in text(r):
+                return "isn't signed by OpenAI"
+            r = run(["spctl", "--assess", "--type", "open", "--context",
+                     "context:primary-signature", "-v", path])
+            if r is None or r.returncode != 0 or "accepted" not in text(r):
+                return "isn't notarized by Apple"
+        except subprocess.TimeoutExpired:
+            return SIGNATURE_TIMED_OUT
         return None
 
     def _connect_chatgpt(self) -> str:
@@ -1062,13 +1086,41 @@ def run(state_path, io, redo: str | None = None) -> int:
     stopped = bool(steps) and io.agent_installed()
     if stopped:
         io.stop_agent()
+    before = _load_done(state_path)
     for step in steps:
         _unmark(state_path, step)
     try:
         return _run_steps(w, state_path, io, steps, stopped)
     finally:
-        if stopped and not w.restarted and io.install() != 0:
-            w.ui.fail("Tilia couldn't restart, so restart your Mac to start it again.")
+        if stopped and not w.restarted:
+            if _half_switched(w) and not _keep_old_bot(w, state_path, io, before):
+                w.ui.fail("Tilia stays stopped until your phone is paired with the new bot, "
+                          "so run ./setup to finish.")
+            elif io.install() != 0:
+                w.ui.fail("Tilia couldn't restart, so restart your Mac to start it again.")
+
+
+def _half_switched(w) -> bool:
+    """A new bot key is saved but no phone is paired with it yet."""
+    return w.new_key and not w.paired
+
+
+def _keep_old_bot(w, state_path, io, before: list[str]) -> bool:
+    """Put back the key the new one replaced, and the bot steps as they were before this
+    run, so the agent restarts exactly as it was. False when there is no old key to go
+    back to (or Keychain won't take it): the agent must then stay stopped."""
+    if not w.old_key:
+        return False
+    try:
+        io.set_token(w.old_key)
+    except (ValueError, RuntimeError):
+        return False
+    for step in ("make_bot", "pair_phone", "keep_running"):
+        if step in before:
+            _mark_done(state_path, step)
+    w.ui.ok("Tilia kept your old bot, since your phone isn't paired with the new one yet. "
+            "Run ./setup bot to switch.")
+    return True
 
 
 def _run_steps(w, state_path, io, steps, stopped) -> int:
@@ -1098,7 +1150,8 @@ def _run_steps(w, state_path, io, steps, stopped) -> int:
         return 0
     except (EOFError, KeyboardInterrupt):
         io.print("")
-        io.print("  Paused. Run ./setup later and you'll be right here.")
+        if not (stopped and _half_switched(w)):  # run() says what happens to the bot
+            io.print("  Paused. Run ./setup later and you'll be right here.")
         return 0
     except Exception as e:  # never a traceback wall; progress is already saved
         io.print("")
@@ -1164,6 +1217,9 @@ class RealIO:
 
     def install_codex(self):
         return codex_install.install(self.run)
+
+    def remove_codex(self):
+        codex_install.remove()
 
     def codex_email(self):
         return codex.login_email()
