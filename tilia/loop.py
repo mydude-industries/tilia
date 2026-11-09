@@ -13,7 +13,8 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-from . import checkins, coach, commands, outbox, signals, texts
+from . import (checkins, coach, commands, mirror, outbox, patterns, signals, texts,
+               worksheets)
 from .claude import LimitError, MissingCLI, NotLoggedIn, UnsupportedCLI
 from .store import local_now
 from .telegram import split_reply
@@ -32,6 +33,7 @@ POWER_EVERY = timedelta(seconds=60)
 OUTBOX_EVERY = timedelta(seconds=30)
 OUTBOX_GIVE_UP = timedelta(hours=6)
 TROUBLE_AFTER = 3                        # failed replies in a row before saying so
+ENTRY_TRIES = 3                          # failed tries at one entry before giving up on it
 
 UNSUPPORTED = "I can only read text for now, but I'm here."
 DOWN = "I can't reach Claude. Open Terminal and run `claude` to log in."
@@ -82,6 +84,7 @@ class Loop:
         self.next_ingest = self.next_slow = self.next_power = self.next_outbox = None
         self.failures = 0
         self.typed_at = None          # when "typing…" was last shown by the tick
+        self.entry_at = {}            # entry id -> earliest retry after a failed try
 
     # ---- the tick --------------------------------------------------------------
 
@@ -92,6 +95,7 @@ class Loop:
             self._safe("updates", self._poll, now)
             self._safe("typing", self._keep_typing, now)
             self._safe("reply", self._answer, now)
+            self._safe("entries", self._entries, now)
             if self.next_ingest is None or now >= self.next_ingest:
                 self.next_ingest = now + INGEST_EVERY
                 self._safe("texts", self._texts, now)
@@ -154,6 +158,14 @@ class Loop:
             return
         self.store.mark_last_checkin_replied()
         self._touch(now)
+        if u.kind == "web_app_data":
+            outcome = worksheets.accept(self.store, now, u.web_app_data)
+            if outcome != "ok":
+                log(f"worksheet payload: {outcome}")
+            if outcome == "expired":
+                self._enqueue(worksheets.EXPIRED, now)
+                self._flush_now(now)
+            return  # answered entries get their reply from _entries
         if u.kind != "text" or u.text is None:
             self.tg.send(self.cfg.chat_id, UNSUPPORTED)
             return
@@ -226,7 +238,7 @@ class Loop:
                     r = coach.respond(self.store, self.cfg, now, batch, run=self.run,
                                       mode=commands.current_mode(self.store))
                 self.store.delete_pending(rows[-1][0])
-                self._enqueue(r.reply, now)
+                outbox.enqueue_reply(self.store, r, now)
         except CLAUDE_ERRORS as e:
             self._claude_down(e, now)
             return
@@ -243,6 +255,71 @@ class Loop:
         self.store.set_meta("notice", None)  # the episode is over
         self._touch(now)
         self._flush_now(now)
+
+    def _entries(self, now) -> None:
+        """Reply to one filled-in worksheet per tick, oldest first. Answers wait in the
+        entries table (status answered) until a reply succeeds, like words in pending.
+        An entry that keeps failing waits on its own (never holding up other entries or
+        texts) and after ENTRY_TRIES failed tries is finished with an honest line."""
+        if self.reply_at is not None and now < self.reply_at:
+            return
+        due = [e for e in worksheets.reply_due(self.store) if self.entry_at.get(e.id, now) <= now]
+        if not due:
+            return
+        e = due[0]
+        try:
+            # One transaction, as in _answer: the turns, the finished entry and the queued
+            # reply all land together, or the entry stays answered for the next try.
+            with self.store.atomic():
+                with self.typing(self.tg, self.cfg.chat_id,
+                                 first_after=self._typing_first_after(now)):
+                    r = worksheets.answer(self.store, self.cfg, now, e, run=self.run)
+                outbox.enqueue_reply(self.store, r, now)
+                self._entry_tries(e.id, None)
+        except CLAUDE_ERRORS as ex:
+            self._claude_down(ex, now)
+            return
+        except Exception as ex:
+            log(f"entry reply failed: {type(ex).__name__}")
+            if not self._give_up(e, now):
+                return
+        self.entry_at.pop(e.id, None)
+        self.failures = 0
+        self.reply_at = None
+        self.store.set_meta("notice", None)
+        self._touch(now)
+        self._flush_now(now)
+        self._safe("mirror", lambda n: mirror.write(self.store, n), now)
+
+    def _entry_tries(self, eid, n) -> int:
+        """The failed-try count per entry, kept in meta so a restart doesn't reset it.
+        n=None clears it; otherwise it is set to n. Returns the count before the call."""
+        tries = json.loads(self.store.get_meta("entry_tries") or "{}")
+        before = int(tries.pop(str(eid), 0))
+        if n is not None:
+            tries[str(eid)] = n
+        self.store.set_meta("entry_tries", json.dumps(tries) if tries else None)
+        return before
+
+    def _give_up(self, e, now) -> bool:
+        """Count a failed try at entry e. Below ENTRY_TRIES it waits ERROR_RETRY on its own
+        (False); at ENTRY_TRIES it is finished with worksheets.GAVE_UP (True once queued)."""
+        n = self._entry_tries(e.id, None) + 1
+        if n < ENTRY_TRIES:
+            self._entry_tries(e.id, n)
+            self.entry_at[e.id] = now + ERROR_RETRY
+            return False
+        try:
+            with self.store.atomic():
+                r = worksheets.give_up(self.store, now, e)
+                outbox.enqueue_reply(self.store, r, now)
+        except Exception as ex:
+            log(f"entry give-up failed: {type(ex).__name__}")
+            self._entry_tries(e.id, n)
+            self.entry_at[e.id] = now + ERROR_RETRY
+            return False
+        log("entry given up")
+        return True
 
     def _claude_down(self, e: Exception, now) -> None:
         self.reply_at = now + CLAUDE_RETRY
@@ -290,7 +367,8 @@ class Loop:
         parts: "typing…" and a short pause, so they don't land all at once."""
         parts = item.get("parts") or split_reply(item["text"])
         while parts:
-            if not self.tg.send(self.cfg.chat_id, parts[0]):
+            kw = {"markup": item["markup"]} if len(parts) == 1 and item.get("markup") else {}
+            if not self.tg.send(self.cfg.chat_id, parts[0], **kw):
                 return False
             parts.pop(0)
             if parts:
@@ -330,9 +408,12 @@ class Loop:
             self.store.set_meta("texts_notice", None)
 
     def _slow(self, now) -> None:
+        worksheets.expire(self.store, now)
         signals.daily_pass(self.store, self.cfg, now, run=self.run)
         if checkins.maybe_send(self.store, self.cfg, now, run=self.run):
             self._flush_now(now)
+        if patterns.maybe_run(self.store, self.cfg, now, run=self.run):
+            self._safe("mirror", lambda n: mirror.write(self.store, n), now)
 
     def _summary(self, now) -> None:
         """Once per idle period: 30 min after the last activity, with nothing pending."""

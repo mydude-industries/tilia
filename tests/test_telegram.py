@@ -1,9 +1,10 @@
+import json
 import subprocess
 
 import pytest
 
 from tilia import keychain
-from tilia.telegram import Telegram, Update, split_reply
+from tilia.telegram import REMOVE_KEYBOARD, Telegram, Update, split_reply
 
 TOKEN = "123:fake-token-for-tests"
 
@@ -155,3 +156,30 @@ def test_update_carries_chat_type_and_sender():
     assert (a.chat_type, a.sender_name, a.sender_username) == ("private", "Alex", "alex_fake")
     assert (b.chat_type, b.sender_name, b.sender_username) == ("group", "", "")
     assert a.update_id == 7 and a.chat_id == 42 and a.text == "418207" and a.kind == "text"
+
+
+def test_web_app_data_parsed():
+    post = FakePost({"ok": True, "result": [
+        {"update_id": 1, "message": {"chat": {"id": 42}, "web_app_data": {
+            "data": "{\"v\":1}", "button_text": "Open"}}}]})
+    (u,) = Telegram(TOKEN, post=post).updates(None)
+    assert u.kind == "web_app_data" and u.web_app_data == "{\"v\":1}" and u.text is None
+    assert post.calls[0][1]["allowed_updates"] == '["message"]'
+
+
+def test_send_webapp_button_markup():
+    post = FakePost({"ok": True})
+    assert Telegram(TOKEN, post=post).send_webapp_button(7, "Hi", "Open", "https://x.test/a")
+    assert json.loads(post.calls[0][1]["reply_markup"]) == {
+        "keyboard": [[{"text": "Open", "web_app": {"url": "https://x.test/a"}}]],
+        "one_time_keyboard": True, "resize_keyboard": True}
+
+
+def test_markup_only_on_last_part():
+    post = FakePost({"ok": True})
+    text = " ".join(f"Sentence number {i} is here." for i in range(230))
+    assert len(text) > 6000
+    assert Telegram(TOKEN, post=post).send(7, text, markup=REMOVE_KEYBOARD)
+    assert len(post.calls) == 2
+    assert "reply_markup" not in post.calls[0][1]
+    assert json.loads(post.calls[1][1]["reply_markup"]) == {"remove_keyboard": True}

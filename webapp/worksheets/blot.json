@@ -1,0 +1,90 @@
+{
+  "type": "blot",
+  "v": 1,
+  "title": "Ink blot",
+  "pitch": "A blot of ink, folded and opened, made only for you. Look at it and say what you see. There are no right answers.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "A blot of ink, folded and opened, made only for you. Look at it and say what you see. There are no right answers.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number before and after shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "blot",
+      "kind": "reveal",
+      "short": "the blot",
+      "prompt": "Take a slow look. Let it be anything.",
+      "why": "What you notice is yours, and it's worth noticing.",
+      "personal": false
+    },
+    {
+      "id": "first",
+      "kind": "text",
+      "short": "what I saw first",
+      "prompt": "What do you see first?",
+      "why": "The first thing you see shows up before you've thought about it.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "else",
+      "kind": "text",
+      "short": "what else I saw",
+      "prompt": "Look again. What else do you see?",
+      "why": "A second look often finds what the first one walked past.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "feel",
+      "kind": "chips",
+      "short": "how it feels",
+      "prompt": "What does it feel like?",
+      "why": "How it feels can say as much as what it looks like.",
+      "personal": false,
+      "chips": [
+        "Calm",
+        "Playful",
+        "Tender",
+        "Sad",
+        "Uneasy",
+        "Threatening",
+        "Strange",
+        "Alive"
+      ],
+      "multi": true
+    },
+    {
+      "id": "feel_more",
+      "kind": "text",
+      "short": "more about the feeling",
+      "prompt": "Say a little more about that feeling.",
+      "why": "Putting it into words can show you where else you've felt it.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing this with the start shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

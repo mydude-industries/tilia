@@ -1,0 +1,111 @@
+{
+  "type": "check_story",
+  "v": 1,
+  "title": "Check the story",
+  "pitch": "About 3 minutes. It pulls apart what happened from the story you told yourself, because the story is usually the part that hurts, and it's rarely the only one that fits.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "About 3 minutes. It pulls apart what happened from the story you told yourself, because the story is usually the part that hurts, and it's rarely the only one that fits.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number now lets you see at the end whether anything eased.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "happened",
+      "kind": "text",
+      "short": "what happened",
+      "prompt": "What happened? Just the facts, like a camera would see it.",
+      "why": "Writing just the facts gives you solid ground before any meaning gets added.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "story",
+      "kind": "text",
+      "short": "the story I told myself",
+      "prompt": "What did you tell yourself it meant?",
+      "why": "Once the story is in words, it's something you can question instead of only feel.",
+      "personal": true,
+      "max_chars": 300
+    },
+    {
+      "id": "sure",
+      "kind": "slider",
+      "short": "how sure",
+      "prompt": "How sure are you that story is true?",
+      "why": "Rating it shows how much of the hurt is resting on a guess.",
+      "personal": false,
+      "min": 0,
+      "max": 100,
+      "labels": [
+        "Not at all",
+        "Completely"
+      ]
+    },
+    {
+      "id": "evidence",
+      "kind": "text",
+      "short": "evidence for and against",
+      "prompt": "What supports the story, and what doesn't?",
+      "why": "Weighing both sides lets the facts decide how true it is, not the feeling.",
+      "personal": false,
+      "max_chars": 400
+    },
+    {
+      "id": "other_reads",
+      "kind": "chips",
+      "short": "other reads",
+      "prompt": "Which of these could also be part of it?",
+      "why": "Seeing other options loosens the grip of the first story.",
+      "personal": true,
+      "chips": [
+        "They were stressed",
+        "I missed something",
+        "It was about them",
+        "It was a bad moment",
+        "I don't know yet"
+      ],
+      "multi": true
+    },
+    {
+      "id": "other_way",
+      "kind": "text",
+      "short": "another way to read it",
+      "prompt": "What is another way to read what happened?",
+      "why": "A second reading gives you a choice in how you respond.",
+      "personal": true,
+      "max_chars": 300
+    },
+    {
+      "id": "friend",
+      "kind": "text",
+      "short": "what I'd tell a friend",
+      "prompt": "If a friend told you this, what would you say to them?",
+      "why": "It lets you borrow the kindness you already give the people you love.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing with the start shows you what these few minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

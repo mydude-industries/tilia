@@ -1,0 +1,88 @@
+{
+  "type": "tarot",
+  "v": 1,
+  "title": "Tarot card",
+  "pitch": "One card, drawn just for you. You read it first, then Tilia shows you the read it wrote before you looked. Not a prediction: a way in to what's on your mind.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "One card, drawn just for you. You read it first, then Tilia shows you the read it wrote before you looked. Not a prediction: a way in to what's on your mind.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number before and after shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "card",
+      "kind": "reveal",
+      "short": "the card",
+      "prompt": "Take your time with it. Let it be anything.",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "notice",
+      "kind": "text",
+      "short": "what I noticed first",
+      "prompt": "What do you notice first?",
+      "why": "What catches your eye first often has something to do with you.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "touches",
+      "kind": "text",
+      "short": "what it touches in my life",
+      "prompt": "What in your life does it touch right now?",
+      "why": "A card is only useful where it meets something real.",
+      "personal": true,
+      "max_chars": 400
+    },
+    {
+      "id": "where",
+      "kind": "chips",
+      "short": "where I feel it",
+      "prompt": "Where do you feel it?",
+      "why": "Your body often knows how much something matters before you do.",
+      "personal": false,
+      "chips": [
+        "Chest",
+        "Throat",
+        "Stomach",
+        "Shoulders",
+        "Hands",
+        "Nowhere"
+      ],
+      "multi": true
+    },
+    {
+      "id": "where_more",
+      "kind": "text",
+      "short": "more about where",
+      "prompt": "Anything more about that feeling?",
+      "why": "Putting it into words can show you where else you've felt it.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing this with the start shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

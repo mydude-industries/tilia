@@ -1,0 +1,96 @@
+{
+  "type": "spread_three",
+  "v": 1,
+  "title": "Three-card spread",
+  "pitch": "Three cards, drawn just for you: what's behind you, where you are, what's next. You read each one first, then see the read Tilia wrote before you looked. Not a prediction.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "Three cards, drawn just for you: what's behind you, where you are, what's next. You read each one first, then see the read Tilia wrote before you looked. Not a prediction.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number before and after shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "card_1",
+      "kind": "reveal",
+      "short": "what's behind you",
+      "prompt": "What's behind you",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_1",
+      "kind": "text",
+      "short": "what's behind you",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 250
+    },
+    {
+      "id": "card_2",
+      "kind": "reveal",
+      "short": "where you are",
+      "prompt": "Where you are",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_2",
+      "kind": "text",
+      "short": "where you are",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 250
+    },
+    {
+      "id": "card_3",
+      "kind": "reveal",
+      "short": "what's next",
+      "prompt": "What's next",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_3",
+      "kind": "text",
+      "short": "what's next",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 250
+    },
+    {
+      "id": "together",
+      "kind": "text",
+      "short": "all of them together",
+      "prompt": "Looking at all of them together, what do you notice?",
+      "why": "The links you see between the cards often say the most.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing this with the start shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

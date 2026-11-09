@@ -1,0 +1,127 @@
+{
+  "type": "ride_wave",
+  "v": 1,
+  "title": "Ride the wave",
+  "pitch": "About 2 minutes, best while the feeling is still loud. It helps you watch the wave instead of acting from the top of it. It may shift as you go, or not; noticing either way is useful.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "About 2 minutes, best while the feeling is still loud. It helps you watch the wave instead of acting from the top of it. It may shift as you go, or not; noticing either way is useful.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number now lets you compare at the end, whichever way it went.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "feeling",
+      "kind": "chips",
+      "short": "the feeling",
+      "prompt": "What's the feeling, if you had to name it?",
+      "why": "Naming a feeling takes a little of its power and tells you what you're riding.",
+      "personal": false,
+      "chips": [
+        "Angry",
+        "Hurt",
+        "Scared",
+        "Ashamed",
+        "Jealous",
+        "Lonely",
+        "Overwhelmed",
+        "Something else"
+      ],
+      "multi": true
+    },
+    {
+      "id": "set_off",
+      "kind": "text",
+      "short": "what set it off",
+      "prompt": "What set it off?",
+      "why": "Knowing the spark helps you see the next wave coming.",
+      "personal": true,
+      "max_chars": 250
+    },
+    {
+      "id": "strength_before",
+      "kind": "slider",
+      "short": "how strong, before",
+      "prompt": "How strong is it right now?",
+      "why": "A number now gives you something to check in with later, whether it moves or not.",
+      "personal": false,
+      "min": 0,
+      "max": 10,
+      "labels": [
+        "Barely there",
+        "As big as it gets"
+      ]
+    },
+    {
+      "id": "pull",
+      "kind": "text",
+      "short": "what it pushes me to do",
+      "prompt": "What is it pushing you to do right now?",
+      "why": "Saying the pull out loud makes it easier not to act on it straight away.",
+      "personal": true,
+      "max_chars": 250
+    },
+    {
+      "id": "reset",
+      "kind": "chips",
+      "short": "the reset I tried",
+      "prompt": "Try one of these now, for a minute or two, then come back.",
+      "why": "Settling your body first can make a little room to think, even if the feeling stays.",
+      "personal": false,
+      "chips": [
+        "Cold water on my face",
+        "Breathing out longer than in",
+        "A fast walk",
+        "Holding something cold",
+        "Shaking it out",
+        "Something else"
+      ],
+      "multi": true
+    },
+    {
+      "id": "strength_after",
+      "kind": "slider",
+      "short": "how strong, after",
+      "prompt": "How strong is it now?",
+      "why": "Up, down or the same, you just watched it closely instead of acting on it.",
+      "personal": false,
+      "min": 0,
+      "max": 10,
+      "labels": [
+        "Barely there",
+        "As big as it gets"
+      ]
+    },
+    {
+      "id": "next_move",
+      "kind": "text",
+      "short": "my next move",
+      "prompt": "What's one thing you'll do, or not do, while it's still here?",
+      "why": "Choosing your next move on purpose, not from the pull, is the reason to wait.",
+      "personal": true,
+      "max_chars": 250
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing with the start shows you what happened, either way.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

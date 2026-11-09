@@ -23,6 +23,8 @@ class Config:
     referrals: str = "never"
     tone: str = "very_direct"
     goal: str = ""
+    worksheets: bool = True          # offer worksheets on my own (asking always works)
+    cards: bool = True               # surprise tarot / blot check-ins
 
 
 def active_model(cfg: Config) -> str:

@@ -1,0 +1,91 @@
+{
+  "type": "week_back",
+  "v": 1,
+  "title": "Look back at the week",
+  "pitch": "About 3 minutes. Looking back on purpose shows you progress you'd otherwise miss, and turns one hard moment into something to try next week.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "About 3 minutes. Looking back on purpose shows you progress you'd otherwise miss, and turns one hard moment into something to try next week.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number now gives you a baseline to compare with next week.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "went_well",
+      "kind": "text",
+      "short": "what went well",
+      "prompt": "What went well this week, even something small?",
+      "why": "Small wins are easy to forget, and noticing them shows you what's working.",
+      "personal": true,
+      "max_chars": 300
+    },
+    {
+      "id": "week_words",
+      "kind": "chips",
+      "short": "the week in words",
+      "prompt": "Which words fit the week?",
+      "why": "A few words give you a quick read you can compare week to week.",
+      "personal": false,
+      "chips": [
+        "Calm",
+        "Busy",
+        "Tense",
+        "Close",
+        "Lonely",
+        "Hopeful",
+        "Tired",
+        "Mixed"
+      ],
+      "multi": true
+    },
+    {
+      "id": "hard",
+      "kind": "text",
+      "short": "a hard moment",
+      "prompt": "What was one hard moment?",
+      "why": "Picking one moment keeps it specific enough to learn from.",
+      "personal": true,
+      "max_chars": 300
+    },
+    {
+      "id": "did_with",
+      "kind": "text",
+      "short": "what I did with it",
+      "prompt": "What did you do with it, and how did that go?",
+      "why": "Looking at your own move is the part you can change.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "next_week",
+      "kind": "text",
+      "short": "one thing for next week",
+      "prompt": "What's one thing you want to try next week?",
+      "why": "One small, clear step is far more likely to happen than a big plan.",
+      "personal": true,
+      "max_chars": 250
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing with the start shows you what looking back did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

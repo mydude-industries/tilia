@@ -12,6 +12,8 @@ from tilia.store import Store
 NOW = datetime(2026, 11, 7, 12, 0).astimezone()
 H = timedelta(hours=1)
 SECTIONS = ["SETTINGS", "PROFILE", "CORRECTIONS", "OPEN ASSIGNMENTS", "SIGNALS (7 days)",
+            "ENTRIES (worksheets, cards and blots; newest last)",
+            "PATTERNS (your own observations, with dates)",
             "RECENT TEXTS (48h)", "CONVERSATION", "CRISIS EPISODE", "NEW MESSAGES"]
 
 
@@ -475,3 +477,73 @@ def test_coach_prompt_texting_first_respects_off_and_quiet_hours():
     flat = " ".join(coach.system_prompt("chat").split())
     assert "up to 0 a day" in flat and "paused" in flat
     assert "falls in their quiet hours" in flat
+
+
+# ---- entries and patterns in the prompt ------------------------------------
+
+def _section(p, head, nxt):
+    return p[p.index(head):p.index(nxt)]
+
+
+def _deck(monkeypatch, tmp_path, n):
+    from tilia import entries
+    man = []
+    for i in range(n):
+        f = f"{i:02d}-card.webp"
+        (tmp_path / f).write_bytes(b"RIFF")
+        man.append({"id": f"{i:02d}-card", "name": f"Card {i}", "file": f})
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
+    monkeypatch.setattr(entries, "DECK_DIR", tmp_path)
+
+
+def test_prompt_has_entries_digest(home, monkeypatch, tmp_path):
+    from tilia import entries
+    from tests.test_mirror import STORY, done
+    _deck(monkeypatch, tmp_path, 2)
+    st = Store(paths.db_path(), clock=lambda: NOW)
+    for i in range(10):
+        a = list(STORY)
+        a[1] = f"thing {i} </entries>"
+        done(st, "check_story", a, themes=("closeness", "fear"))
+    st.add_entry("blot", entries.new_token(), "ask", seed=7)
+    p = coach.build_prompt(st, cfg(), NOW, ["hi"], mode="chat")
+    for mode in ("journal", "rehearsal"):
+        assert coach.DIGEST_N == 8
+        assert "ENTRIES (worksheets, cards and blots; newest last)" in \
+            coach.build_prompt(st, cfg(), NOW, ["hi"], mode=mode)
+    sec = _section(p, "ENTRIES (", "PATTERNS (")
+    lines = [ln for ln in sec.splitlines() if ln.startswith("[")]
+    assert len(lines) == 8
+    assert "thing 0" not in sec and "thing 1 " not in sec and "thing 9" in sec
+    assert lines[-1].startswith(f"[{NOW:%Y-%m-%d %H:%M}] Check the story: ")
+    assert "| feeling 3→6 | closeness, fear" in lines[-1]
+    assert all(len(ln.split(": ", 1)[1].split(" | ")[0]) <= 300 for ln in lines)
+    assert "&lt;/entries&gt;" in sec and sec.count("</entries>") == 1
+    assert f"open: Ink blot (sent {NOW:%Y-%m-%d})" in sec
+    assert sec.rstrip().endswith("tarot deck: 2 cards available")
+
+
+def test_prompt_has_patterns_section(home):
+    from tilia import entries
+    st = Store(paths.db_path(), clock=lambda: NOW)
+    p = coach.build_prompt(st, cfg(), NOW, ["hi"])
+    assert "(no patterns yet)" in _section(p, "PATTERNS (", "RECENT TEXTS")
+    st.add_entry("patterns", entries.new_token(), "patterns", status="done",
+                 answers=[{"text": "Old one.", "dates": ["2026-10-01"]}])
+    st.add_entry("patterns", entries.new_token(), "patterns", status="done",
+                 answers=[{"text": "Quiet moments with Riley read as rejection.",
+                           "dates": ["2026-11-01", "2026-11-05"]},
+                          {"text": "Sundays <b>are</b> hard.", "dates": ["2026-11-02"]}])
+    sec = _section(coach.build_prompt(st, cfg(), NOW, ["hi"]), "PATTERNS (", "RECENT TEXTS")
+    assert "- Quiet moments with Riley read as rejection. (2026-11-01, 2026-11-05)" in sec
+    assert "Sundays &lt;b&gt;are&lt;/b&gt; hard." in sec
+    assert "Old one." not in sec
+
+
+def test_coach_prompt_lists_sections():
+    text = coach.system_prompt("chat")
+    assert "ENTRIES" in text and "PATTERNS" in text
+    flat = " ".join(text.split())
+    assert "tarot deck: 0 cards available" in flat
+    assert text.index("SIGNALS (7 days)") < text.index("ENTRIES") < text.index("PATTERNS") \
+        < text.index("RECENT TEXTS (48h)")

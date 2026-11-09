@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 
-from . import paths
+from . import entries, paths
+from .webapp import Offer
 
 TIMEOUT_S = 120
 
@@ -132,6 +134,57 @@ class CoachReply:
     new_assignment: dict | None = None
     close_assignment: int | None = None
     remember: str | None = None
+    worksheet: dict | None = None
+    themes: list[str] = field(default_factory=list)
+    offer: Offer | None = None  # set by coach._apply
+    remove_keyboard: bool = False
+    intent_signal: int | None = None
+
+
+def _focus(x) -> tuple[bool, str | None]:
+    """(well-formed, focus): a non-empty string, or null."""
+    if x is None:
+        return True, None
+    if isinstance(x, str):
+        return True, x.strip() or None
+    return False, None
+
+
+def _due(x) -> str | None:
+    if not isinstance(x, str):
+        return None
+    try:
+        return date.fromisoformat(x.strip()).isoformat()
+    except ValueError:
+        return None
+
+
+def _new_assignment(na) -> dict | None:
+    if not isinstance(na, dict):
+        return None
+    if na.get("kind") in ("rehearsal", "challenge"):
+        return na if isinstance(na.get("text"), str) and na["text"].strip() else None
+    if na.get("kind") == "worksheet" and na.get("type") in entries.TYPES:
+        ok, focus = _focus(na.get("focus"))
+        if ok:
+            return {"kind": "worksheet", "type": na["type"], "focus": focus,
+                    "due": _due(na.get("due"))}
+    return None
+
+
+def _worksheet(ws) -> dict | None:
+    if not isinstance(ws, dict) or ws.get("type") not in (*entries.TYPES, "again"):
+        return None
+    ok, focus = _focus(ws.get("focus"))
+    return {"type": ws["type"], "focus": focus} if ok else None
+
+
+def _themes(xs) -> list[str]:
+    out = []
+    for x in xs if isinstance(xs, list) else []:
+        if isinstance(x, str) and x in entries.THEMES and x not in out:
+            out.append(x)
+    return out[:3]
 
 
 def parse_coach(text: str) -> CoachReply | None:
@@ -144,14 +197,13 @@ def parse_coach(text: str) -> CoachReply | None:
     state = obj.get("state")
     if state not in ("ok", "struggling", "crisis"):
         state = "ok"
-    na = obj.get("new_assignment")
-    if not (isinstance(na, dict) and na.get("kind") in ("rehearsal", "challenge")
-            and isinstance(na.get("text"), str) and na["text"].strip()):
-        na = None
+    na = _new_assignment(obj.get("new_assignment"))
     ca = obj.get("close_assignment")
     if not isinstance(ca, int) or isinstance(ca, bool):
         ca = None
     rem = obj.get("remember")
     if not (isinstance(rem, str) and rem.strip()):
         rem = None
-    return CoachReply(reply.strip(), state, na, ca, rem)
+    return CoachReply(reply.strip(), state, na, ca, rem,
+                      worksheet=_worksheet(obj.get("worksheet")),
+                      themes=_themes(obj.get("themes")))

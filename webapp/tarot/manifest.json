@@ -1,0 +1,705 @@
+[
+  {
+    "id": "00-the-fool",
+    "name": "The Fool",
+    "number": "0",
+    "file": "00-the-fool.webp",
+    "scene": "Young traveler at cliff edge, small dog, white rose, bundle on staff, rising sun",
+    "symbols": [
+      "Young traveler at cliff edge",
+      "small dog",
+      "white rose",
+      "bundle on staff",
+      "rising sun"
+    ]
+  },
+  {
+    "id": "01-the-magician",
+    "name": "The Magician",
+    "number": "I",
+    "file": "01-the-magician.webp",
+    "scene": "Robed magician under an arch of linden branches, wand raised, hand pointing to earth, infinity sign overhead, table with cup, sword, pentacle and wand",
+    "symbols": [
+      "Robed magician under an arch of linden branches",
+      "wand raised",
+      "hand pointing to earth",
+      "infinity sign overhead",
+      "table with cup",
+      "sword",
+      "pentacle and wand"
+    ]
+  },
+  {
+    "id": "02-the-high-priestess",
+    "name": "The High Priestess",
+    "number": "II",
+    "file": "02-the-high-priestess.webp",
+    "scene": "Seated priestess between dark and light pillars, crescent moon at feet, scroll and botanical veil",
+    "symbols": [
+      "Seated priestess between dark and light pillars",
+      "crescent moon at feet",
+      "scroll and botanical veil"
+    ]
+  },
+  {
+    "id": "03-the-empress",
+    "name": "The Empress",
+    "number": "III",
+    "file": "03-the-empress.webp",
+    "scene": "Crowned empress in fertile garden, wheat and linden, Venus emblem",
+    "symbols": [
+      "Crowned empress in fertile garden",
+      "wheat and linden",
+      "Venus emblem"
+    ]
+  },
+  {
+    "id": "04-the-emperor",
+    "name": "The Emperor",
+    "number": "IV",
+    "file": "04-the-emperor.webp",
+    "scene": "Bearded emperor on stone throne with ram carvings, orb and sceptre",
+    "symbols": [
+      "Bearded emperor on stone throne with ram carvings",
+      "orb and sceptre"
+    ]
+  },
+  {
+    "id": "05-the-hierophant",
+    "name": "The Hierophant",
+    "number": "V",
+    "file": "05-the-hierophant.webp",
+    "scene": "Hierophant seated blessing two initiates, crossed keys",
+    "symbols": [
+      "Hierophant seated blessing two initiates",
+      "crossed keys"
+    ]
+  },
+  {
+    "id": "06-the-lovers",
+    "name": "The Lovers",
+    "number": "VI",
+    "file": "06-the-lovers.webp",
+    "scene": "Two adult lovers under angel, garden and mountain",
+    "symbols": [
+      "Two adult lovers under angel",
+      "garden and mountain"
+    ]
+  },
+  {
+    "id": "07-the-chariot",
+    "name": "The Chariot",
+    "number": "VII",
+    "file": "07-the-chariot.webp",
+    "scene": "Armored charioteer with black and white sphinxes",
+    "symbols": []
+  },
+  {
+    "id": "08-strength",
+    "name": "Strength",
+    "number": "VIII",
+    "file": "08-strength.webp",
+    "scene": "Gentle woman calmly holds lion jaws, infinity overhead",
+    "symbols": [
+      "Gentle woman calmly holds lion jaws",
+      "infinity overhead"
+    ]
+  },
+  {
+    "id": "09-the-hermit",
+    "name": "The Hermit",
+    "number": "IX",
+    "file": "09-the-hermit.webp",
+    "scene": "Cloaked elder with star lantern and staff on summit",
+    "symbols": []
+  },
+  {
+    "id": "10-wheel-of-fortune",
+    "name": "Wheel of Fortune",
+    "number": "X",
+    "file": "10-wheel-of-fortune.webp",
+    "scene": "Great esoteric wheel with sphinx and four winged corner beings",
+    "symbols": []
+  },
+  {
+    "id": "11-justice",
+    "name": "Justice",
+    "number": "XI",
+    "file": "11-justice.webp",
+    "scene": "Seated crowned figure with upright sword and balanced scales",
+    "symbols": []
+  },
+  {
+    "id": "12-the-hanged-man",
+    "name": "The Hanged Man",
+    "number": "XII",
+    "file": "12-the-hanged-man.webp",
+    "scene": "Serene person suspended upside down by one ankle from living tree, crossed legs and halo",
+    "symbols": [
+      "Serene person suspended upside down by one ankle from living tree",
+      "crossed legs and halo"
+    ]
+  },
+  {
+    "id": "13-death",
+    "name": "Death",
+    "number": "XIII",
+    "file": "13-death.webp",
+    "scene": "Armored skeleton riding white horse, fallen crown, rising sun, transformation without gore",
+    "symbols": [
+      "Armored skeleton riding white horse",
+      "fallen crown",
+      "rising sun",
+      "transformation without gore"
+    ]
+  },
+  {
+    "id": "14-temperance",
+    "name": "Temperance",
+    "number": "XIV",
+    "file": "14-temperance.webp",
+    "scene": "Winged angel pours water between two cups, one foot on land and one in water",
+    "symbols": [
+      "Winged angel pours water between two cups",
+      "one foot on land and one in water"
+    ]
+  },
+  {
+    "id": "15-the-devil",
+    "name": "The Devil",
+    "number": "XV",
+    "file": "15-the-devil.webp",
+    "scene": "Horned winged figure above two loosely chained adults, symbolic bondage, modest clothed figures",
+    "symbols": [
+      "Horned winged figure above two loosely chained adults",
+      "symbolic bondage",
+      "modest clothed figures"
+    ]
+  },
+  {
+    "id": "16-the-tower",
+    "name": "The Tower",
+    "number": "XVI",
+    "file": "16-the-tower.webp",
+    "scene": "Lightning strikes crowned stone tower, two falling figures, fire",
+    "symbols": [
+      "Lightning strikes crowned stone tower",
+      "two falling figures",
+      "fire"
+    ]
+  },
+  {
+    "id": "17-the-star",
+    "name": "The Star",
+    "number": "XVII",
+    "file": "17-the-star.webp",
+    "scene": "Woman kneels pouring two pitchers onto land and pool, eight stars, modest classical drapery",
+    "symbols": [
+      "Woman kneels pouring two pitchers onto land and pool",
+      "eight stars",
+      "modest classical drapery"
+    ]
+  },
+  {
+    "id": "18-the-moon",
+    "name": "The Moon",
+    "number": "XVIII",
+    "file": "18-the-moon.webp",
+    "scene": "Moon above dog and wolf, crayfish emerges from pool, path between towers",
+    "symbols": [
+      "Moon above dog and wolf",
+      "crayfish emerges from pool",
+      "path between towers"
+    ]
+  },
+  {
+    "id": "19-the-sun",
+    "name": "The Sun",
+    "number": "XIX",
+    "file": "19-the-sun.webp",
+    "scene": "Radiant sun above child riding white horse, sunflowers, flowing banner",
+    "symbols": [
+      "Radiant sun above child riding white horse",
+      "sunflowers",
+      "flowing banner"
+    ]
+  },
+  {
+    "id": "20-judgement",
+    "name": "Judgement",
+    "number": "XX",
+    "file": "20-judgement.webp",
+    "scene": "Angel blows trumpet above people rising with arms lifted, renewal",
+    "symbols": [
+      "Angel blows trumpet above people rising with arms lifted",
+      "renewal"
+    ]
+  },
+  {
+    "id": "21-the-world",
+    "name": "The World",
+    "number": "XXI",
+    "file": "21-the-world.webp",
+    "scene": "Dancing figure modestly draped in oval botanical wreath, four symbolic corner beings",
+    "symbols": [
+      "Dancing figure modestly draped in oval botanical wreath",
+      "four symbolic corner beings"
+    ]
+  },
+  {
+    "id": "wands-01-ace",
+    "name": "Ace of Wands",
+    "number": "",
+    "file": "wands-01-ace.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ace of Wands, integrated with linden botany. Precisely 1 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-02-two",
+    "name": "Two of Wands",
+    "number": "",
+    "file": "wands-02-two.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Two of Wands, integrated with linden botany. Precisely 2 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-03-three",
+    "name": "Three of Wands",
+    "number": "",
+    "file": "wands-03-three.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Three of Wands, integrated with linden botany. Precisely 3 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-04-four",
+    "name": "Four of Wands",
+    "number": "",
+    "file": "wands-04-four.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Four of Wands, integrated with linden botany. Precisely 4 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-05-five",
+    "name": "Five of Wands",
+    "number": "",
+    "file": "wands-05-five.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Five of Wands, integrated with linden botany. Precisely 5 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-06-six",
+    "name": "Six of Wands",
+    "number": "",
+    "file": "wands-06-six.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Six of Wands, integrated with linden botany. Precisely 6 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-07-seven",
+    "name": "Seven of Wands",
+    "number": "",
+    "file": "wands-07-seven.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Seven of Wands, integrated with linden botany. Precisely 7 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-08-eight",
+    "name": "Eight of Wands",
+    "number": "",
+    "file": "wands-08-eight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Eight of Wands, integrated with linden botany. Precisely 8 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-09-nine",
+    "name": "Nine of Wands",
+    "number": "",
+    "file": "wands-09-nine.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Nine of Wands, integrated with linden botany. Precisely 9 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-10-ten",
+    "name": "Ten of Wands",
+    "number": "",
+    "file": "wands-10-ten.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ten of Wands, integrated with linden botany. Precisely 10 wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-11-page",
+    "name": "Page of Wands",
+    "number": "",
+    "file": "wands-11-page.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Page of Wands, integrated with linden botany. Precisely one primary wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-12-knight",
+    "name": "Knight of Wands",
+    "number": "",
+    "file": "wands-12-knight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Knight of Wands, integrated with linden botany. Precisely one primary wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-13-queen",
+    "name": "Queen of Wands",
+    "number": "",
+    "file": "wands-13-queen.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Queen of Wands, integrated with linden botany. Precisely one primary wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "wands-14-king",
+    "name": "King of Wands",
+    "number": "",
+    "file": "wands-14-king.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for King of Wands, integrated with linden botany. Precisely one primary wands suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-01-ace",
+    "name": "Ace of Cups",
+    "number": "",
+    "file": "cups-01-ace.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ace of Cups, integrated with linden botany. Precisely 1 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-02-two",
+    "name": "Two of Cups",
+    "number": "",
+    "file": "cups-02-two.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Two of Cups, integrated with linden botany. Precisely 2 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-03-three",
+    "name": "Three of Cups",
+    "number": "",
+    "file": "cups-03-three.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Three of Cups, integrated with linden botany. Precisely 3 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-04-four",
+    "name": "Four of Cups",
+    "number": "",
+    "file": "cups-04-four.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Four of Cups, integrated with linden botany. Precisely 4 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-05-five",
+    "name": "Five of Cups",
+    "number": "",
+    "file": "cups-05-five.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Five of Cups, integrated with linden botany. Precisely 5 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-06-six",
+    "name": "Six of Cups",
+    "number": "",
+    "file": "cups-06-six.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Six of Cups, integrated with linden botany. Precisely 6 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-07-seven",
+    "name": "Seven of Cups",
+    "number": "",
+    "file": "cups-07-seven.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Seven of Cups, integrated with linden botany. Precisely 7 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-08-eight",
+    "name": "Eight of Cups",
+    "number": "",
+    "file": "cups-08-eight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Eight of Cups, integrated with linden botany. Precisely 8 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-09-nine",
+    "name": "Nine of Cups",
+    "number": "",
+    "file": "cups-09-nine.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Nine of Cups, integrated with linden botany. Precisely 9 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-10-ten",
+    "name": "Ten of Cups",
+    "number": "",
+    "file": "cups-10-ten.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ten of Cups, integrated with linden botany. Precisely 10 cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-11-page",
+    "name": "Page of Cups",
+    "number": "",
+    "file": "cups-11-page.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Page of Cups, integrated with linden botany. Precisely one primary cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-12-knight",
+    "name": "Knight of Cups",
+    "number": "",
+    "file": "cups-12-knight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Knight of Cups, integrated with linden botany. Precisely one primary cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-13-queen",
+    "name": "Queen of Cups",
+    "number": "",
+    "file": "cups-13-queen.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Queen of Cups, integrated with linden botany. Precisely one primary cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "cups-14-king",
+    "name": "King of Cups",
+    "number": "",
+    "file": "cups-14-king.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for King of Cups, integrated with linden botany. Precisely one primary cups suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-01-ace",
+    "name": "Ace of Swords",
+    "number": "",
+    "file": "swords-01-ace.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ace of Swords, integrated with linden botany. Precisely 1 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-02-two",
+    "name": "Two of Swords",
+    "number": "",
+    "file": "swords-02-two.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Two of Swords, integrated with linden botany. Precisely 2 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-03-three",
+    "name": "Three of Swords",
+    "number": "",
+    "file": "swords-03-three.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Three of Swords, integrated with linden botany. Precisely 3 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-04-four",
+    "name": "Four of Swords",
+    "number": "",
+    "file": "swords-04-four.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Four of Swords, integrated with linden botany. Precisely 4 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-05-five",
+    "name": "Five of Swords",
+    "number": "",
+    "file": "swords-05-five.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Five of Swords, integrated with linden botany. Precisely 5 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-06-six",
+    "name": "Six of Swords",
+    "number": "",
+    "file": "swords-06-six.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Six of Swords, integrated with linden botany. Precisely 6 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-07-seven",
+    "name": "Seven of Swords",
+    "number": "",
+    "file": "swords-07-seven.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Seven of Swords, integrated with linden botany. Precisely 7 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-08-eight",
+    "name": "Eight of Swords",
+    "number": "",
+    "file": "swords-08-eight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Eight of Swords, integrated with linden botany. Precisely 8 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-09-nine",
+    "name": "Nine of Swords",
+    "number": "",
+    "file": "swords-09-nine.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Nine of Swords, integrated with linden botany. Precisely 9 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-10-ten",
+    "name": "Ten of Swords",
+    "number": "",
+    "file": "swords-10-ten.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ten of Swords, integrated with linden botany. Precisely 10 swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-11-page",
+    "name": "Page of Swords",
+    "number": "",
+    "file": "swords-11-page.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Page of Swords, integrated with linden botany. Precisely one primary swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-12-knight",
+    "name": "Knight of Swords",
+    "number": "",
+    "file": "swords-12-knight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Knight of Swords, integrated with linden botany. Precisely one primary swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-13-queen",
+    "name": "Queen of Swords",
+    "number": "",
+    "file": "swords-13-queen.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Queen of Swords, integrated with linden botany. Precisely one primary swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "swords-14-king",
+    "name": "King of Swords",
+    "number": "",
+    "file": "swords-14-king.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for King of Swords, integrated with linden botany. Precisely one primary swords suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-01-ace",
+    "name": "Ace of Pentacles",
+    "number": "",
+    "file": "pentacles-01-ace.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ace of Pentacles, integrated with linden botany. Precisely 1 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-02-two",
+    "name": "Two of Pentacles",
+    "number": "",
+    "file": "pentacles-02-two.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Two of Pentacles, integrated with linden botany. Precisely 2 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-03-three",
+    "name": "Three of Pentacles",
+    "number": "",
+    "file": "pentacles-03-three.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Three of Pentacles, integrated with linden botany. Precisely 3 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-04-four",
+    "name": "Four of Pentacles",
+    "number": "",
+    "file": "pentacles-04-four.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Four of Pentacles, integrated with linden botany. Precisely 4 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-05-five",
+    "name": "Five of Pentacles",
+    "number": "",
+    "file": "pentacles-05-five.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Five of Pentacles, integrated with linden botany. Precisely 5 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-06-six",
+    "name": "Six of Pentacles",
+    "number": "",
+    "file": "pentacles-06-six.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Six of Pentacles, integrated with linden botany. Precisely 6 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-07-seven",
+    "name": "Seven of Pentacles",
+    "number": "",
+    "file": "pentacles-07-seven.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Seven of Pentacles, integrated with linden botany. Precisely 7 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-08-eight",
+    "name": "Eight of Pentacles",
+    "number": "",
+    "file": "pentacles-08-eight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Eight of Pentacles, integrated with linden botany. Precisely 8 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-09-nine",
+    "name": "Nine of Pentacles",
+    "number": "",
+    "file": "pentacles-09-nine.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Nine of Pentacles, integrated with linden botany. Precisely 9 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-10-ten",
+    "name": "Ten of Pentacles",
+    "number": "",
+    "file": "pentacles-10-ten.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Ten of Pentacles, integrated with linden botany. Precisely 10 pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-11-page",
+    "name": "Page of Pentacles",
+    "number": "",
+    "file": "pentacles-11-page.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Page of Pentacles, integrated with linden botany. Precisely one primary pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-12-knight",
+    "name": "Knight of Pentacles",
+    "number": "",
+    "file": "pentacles-12-knight.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Knight of Pentacles, integrated with linden botany. Precisely one primary pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-13-queen",
+    "name": "Queen of Pentacles",
+    "number": "",
+    "file": "pentacles-13-queen.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for Queen of Pentacles, integrated with linden botany. Precisely one primary pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "pentacles-14-king",
+    "name": "King of Pentacles",
+    "number": "",
+    "file": "pentacles-14-king.webp",
+    "scene": "Traditional Rider-Waite-Smith narrative composition and recognizable symbolism for King of Pentacles, integrated with linden botany. Precisely one primary pentacles suit objects; do not substitute generic botanical still life.",
+    "symbols": []
+  },
+  {
+    "id": "card-back",
+    "name": "Card Back",
+    "number": "",
+    "file": "card-back.webp",
+    "scene": "Reversible 180-degree rotationally symmetrical occult botanical card back, central eight-point star medallion, mirrored linden branches, heart-shaped serrated leaves and flower bracts. No text or numbers.",
+    "symbols": []
+  }
+]

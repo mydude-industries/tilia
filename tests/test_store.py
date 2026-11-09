@@ -142,6 +142,7 @@ def _fill(store, at):
     store.set_cursor(1, 1)
     store.add_correction("c")
     store.add_journal("j")
+    store.add_entry("blot", "fill", "ask")
     store.set_meta("k", "v")
 
 
@@ -272,3 +273,113 @@ def test_agent_and_setup_create_files_private(home, monkeypatch):
     assert stat.S_IMODE(tmp.stat().st_mode) == 0o700  # the plist's TMPDIR exists, private
     assert setup_wizard.main(["no-such-step"]) == 2
     assert masks == [0o077, 0o077]
+
+
+# ---- entries ----------------------------------------------------------------------
+
+def test_entry_roundtrip(store):
+    store.add_entry("check_story", "tok", "ask", wording={"pitch": "x"})
+    e = store.entry_by_token("tok")
+    assert e.status == "open" and e.wording == {"pitch": "x"} and e.themes == []
+    assert store.get_entry(e.id).token == "tok"
+    assert store.entry_by_token("nope") is None
+
+
+def test_sealed_read_written_once(store):
+    i = store.add_entry("blot", "t", "ask")
+    assert store.set_sealed_read(i, "first") is True
+    assert store.set_sealed_read(i, "second") is False
+    assert store.get_entry(i).sealed_read == "first"
+
+
+def test_expire_entries_drops_sealed_read(tmp_path):
+    clock = {"now": NOW}
+    s = Store(tmp_path / "t.db", clock=lambda: clock["now"])
+    clock["now"] = NOW - timedelta(days=7, minutes=1)
+    old = s.add_entry("blot", "old", "ask")
+    s.set_sealed_read(old, "secret")
+    clock["now"] = NOW - timedelta(days=6)
+    fresh = s.add_entry("blot", "fresh", "ask")
+    clock["now"] = NOW - timedelta(days=30)
+    done = s.add_entry("blot", "done", "ask")
+    s.answer_entry(done, [1], None, None)
+    assert s.expire_entries(NOW, timedelta(days=7)) == 1
+    assert s.get_entry(old).status == "expired" and s.get_entry(old).sealed_read is None
+    assert s.get_entry(fresh).status == "open"
+    assert s.get_entry(done).status == "answered"
+
+
+def test_answer_entry_sets_outcome(store):
+    a = store.add_entry("w", "a", "ask")
+    store.answer_entry(a, [{"q": 1}], 3, 6)
+    e = store.get_entry(a)
+    assert e.status == "answered" and e.outcome == 3 and e.answers == [{"q": 1}]
+    assert e.answered_at is not None and (e.mood_before, e.mood_after) == (3, 6)
+    b = store.add_entry("w", "b", "ask")
+    store.answer_entry(b, [], None, 6)
+    assert store.get_entry(b).outcome is None
+
+
+def test_finish_followup_and_listing(store):
+    a = store.add_entry("w", "a", "ask")
+    b = store.add_entry("blot", "b", "ask", status="answered")
+    store.finish_entry(a, "reply", ["x", "y"], 5, followup_signal=1)
+    store.set_entry_followup_at(a, "2026-11-08T10:00:00+00:00")
+    e = store.get_entry(a)
+    assert (e.status, e.reply, e.themes, e.turn_id, e.followup_signal) == \
+        ("done", "reply", ["x", "y"], 5, 1)
+    assert e.followup_at == "2026-11-08T10:00:00+00:00"
+    assert [x.id for x in store.entries()] == [a, b]
+    assert [x.id for x in store.entries(types=["blot"])] == [b]
+    assert [x.id for x in store.entries(statuses=["done"])] == [a]
+
+
+def test_add_signal_returns_id_and_last_turn_id(store):
+    assert store.last_turn_id() is None
+    assert isinstance(store.add_signal(1, "k", "d", NOW), int)
+    store.add_turn("user", "1")
+    store.add_turn("coach", "2")
+    assert store.last_turn_id() == 2 and store.last_turn_id("user") == 1
+
+
+def test_forget_covers_entries(store):
+    yesterday = NOW - timedelta(days=1)
+    ins = ("INSERT INTO entries(token,type,source,created,answered_at) "
+           "VALUES (?,?,?,?,?)")
+    store._conn.execute(ins, ("today", "w", "ask", NOW.isoformat(), None))
+    store._conn.execute(ins, ("yday", "w", "ask", yesterday.isoformat(), None))
+    store._conn.execute(ins, ("yans", "w", "ask", yesterday.isoformat(), NOW.isoformat()))
+    store.forget("day", NOW)
+    assert [e.token for e in store.entries()] == ["yday"]
+    store.forget("all", NOW)
+    assert store.entries() == [] and store.stats()["entries"] == 0
+    store.add_turn("user", "q")
+    keep = store.add_entry("w", "keep", "ask", turn_id=None)
+    gone = store.add_entry("w", "gone", "ask", turn_id=store.last_turn_id("user"))
+    store.forget("last", NOW)
+    assert [e.id for e in store.entries()] == [keep]
+    assert gone not in [e.id for e in store.entries()]
+
+
+def test_data_dir_tells_spotlight_not_to_index_it(home):
+    d = paths.data_dir()
+    marker = d / ".metadata_never_index"
+    assert marker.is_file() and not marker.is_symlink()
+    assert stat.S_IMODE(marker.stat().st_mode) == 0o600
+    marker.chmod(0o644)
+    paths.data_dir()  # again: left in place, made private
+    assert stat.S_IMODE(marker.stat().st_mode) == 0o600
+
+
+def test_data_dir_starts_even_if_the_spotlight_marker_is_a_symlink(home, tmp_path, capsys,
+                                                                    monkeypatch):
+    monkeypatch.setattr(paths, "_warned_index", False)
+    d = paths.data_dir()
+    marker = d / ".metadata_never_index"
+    marker.unlink()
+    marker.symlink_to(tmp_path / "elsewhere")
+    assert paths.data_dir() == d  # no crash
+    assert ".metadata_never_index" in capsys.readouterr().err
+    assert not (tmp_path / "elsewhere").exists()  # never followed
+    paths.data_dir()
+    assert capsys.readouterr().err == ""  # said once

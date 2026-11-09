@@ -391,3 +391,34 @@ def test_plain_commands_show_no_typing(store, tg):
     for c in ("/help", "/privacy", "/practice", "/journal", "/quieter", "/forget last"):
         h(c, store, mkcfg(), tg, no_run)
     assert tg.typings == 0
+
+
+def test_worksheets_toggle(store, tg):
+    cfg = mkcfg()
+    assert cfg.worksheets is True
+    h("/worksheets off", store, cfg, tg, no_run)
+    assert cfg.worksheets is False and config.load().worksheets is False
+    assert tg.sent[-1] == ("Okay. I won't offer worksheets on my own. "
+                           "Ask any time and you'll get one.")
+    h("/worksheets on", store, cfg, tg, no_run)
+    assert cfg.worksheets is True and config.load().worksheets is True
+    assert tg.sent[-1] == "Okay. I'll offer a worksheet when one would help."
+    h("/worksheets", store, cfg, tg, no_run)
+    assert tg.sent[-1] == "Use /worksheets on or /worksheets off."
+    h("/help", store, mkcfg(), tg, no_run)
+    assert "/worksheets on|off - whether I offer worksheets on my own" in tg.sent[-1]
+
+
+def test_cards_toggle(store, tg):
+    cfg = mkcfg()
+    assert cfg.cards is True
+    h("/cards off", store, cfg, tg, no_run)
+    assert cfg.cards is False and config.load().cards is False
+    assert tg.sent[-1] == "Okay. No more cards or blots out of the blue. Ask any time."
+    h("/cards on", store, cfg, tg, no_run)
+    assert cfg.cards is True and config.load().cards is True
+    assert tg.sent[-1] == "Okay. Now and then I'll send you a card or a blot."
+    h("/cards", store, cfg, tg, no_run)
+    assert tg.sent[-1] == "Use /cards on or /cards off."
+    h("/help", store, mkcfg(), tg, no_run)
+    assert "/cards on|off" in tg.sent[-1]

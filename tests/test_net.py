@@ -103,6 +103,8 @@ SHELL_NET = {"curl", "wget", "nc", "osascript", "ssh"}
 # (codex_install.py downloads exactly that pinned asset and checks its SHA-256 before use).
 # System Settings links (x-apple.systempreferences:) are not web URLs.
 ALLOWED_URLS = ("https://api.telegram.org", "https://t.me/BotFather",
+                # the worksheet page's address, put in a Telegram button; Tilia never fetches it
+                "https://mydude-industries.github.io/tilia",
                 "https://claude.ai/install.sh", "https://claude.ai/login",
                 "https://github.com/openai/codex/releases/download/rust-v0.167.0")
 # The two allow-listed lines: setup's Claude installer (tilia/setup_wizard.py), and the

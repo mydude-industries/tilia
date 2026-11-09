@@ -41,6 +41,8 @@ for key, val in (("__PYTHON__", py), ("__REPO__", repo), ("__DATA__", data), ("_
 open(dest, "w", encoding="utf-8").write(text)
 PYEOF
 plutil -lint "$DEST" >/dev/null
+# The mirror page (0600, in the data folder) and its "Tilia Mirror.html" alias in your home folder.
+(cd "$REPO" && "$PY" -m tilia mirror) >/dev/null || echo "Couldn't write the mirror page yet. /mirror in Telegram makes it." >&2
 
 # Remove any previously loaded copy; fine if none exists.
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true

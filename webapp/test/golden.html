@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Blot golden check</title>
+<link rel="icon" href="data:,">
+<style>
+  body { margin: 0; padding: 24px 16px; background: #fbfaf7; color: #1d1d1b;
+         font: 15px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  h1 { margin: 0 0 4px; font: 600 20px/1.2 ui-serif, Georgia, serif; }
+  p { margin: 0 0 16px; color: #6f6d67; }
+  table { border-collapse: collapse; }
+  td, th { padding: 2px 12px 2px 0; text-align: left; }
+  .pass { color: #3f6b5a; }
+  .fail { color: #a3361f; font-weight: 700; }
+  #summary { font-size: 18px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<h1>Blot golden check</h1>
+<p>Draws seeds 1–20 in this browser and compares their hashes with blot-golden.json. Serve webapp/ over http and open test/golden.html.</p>
+<p id="summary">Running…</p>
+<table><thead><tr><th>seed</th><th>mask</th><th>rgba</th><th>result</th></tr></thead><tbody id="rows"></tbody></table>
+<script src="../blot.js"></script>
+<script>
+(function () {
+  "use strict";
+  var B = window.TiliaBlot, rows = document.getElementById("rows"), sum = document.getElementById("summary");
+  function cell(tr, text, cls) { var td = document.createElement("td"); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); }
+  fetch("blot-golden.json", { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (golden) {
+    var fails = 0, i = 0;
+    function next() {
+      if (i === golden.length) {
+        sum.textContent = (fails ? "FAIL: " + fails + " of " : "PASS: all ") + golden.length + " seeds (generator " + B.GEN + ")";
+        sum.className = fails ? "fail" : "pass";
+        return;
+      }
+      var g = golden[i++], r = B.generate(g.seed), mask = B.hash(r.mask), rgba = B.hash(r.rgba);
+      var ok = mask === g.mask && rgba === g.rgba;
+      if (!ok) fails++;
+      var tr = document.createElement("tr");
+      cell(tr, String(g.seed)); cell(tr, mask); cell(tr, rgba); cell(tr, ok ? "PASS" : "FAIL", ok ? "pass" : "fail");
+      rows.appendChild(tr);
+      setTimeout(next, 0);
+    }
+    next();
+  }).catch(function (e) { sum.textContent = "FAIL: could not load blot-golden.json (" + e + ")"; sum.className = "fail"; });
+})();
+</script>
+</body>
+</html>

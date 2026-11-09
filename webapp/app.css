@@ -1,0 +1,586 @@
+/* Tilia worksheet page. Ink on warm paper; Telegram's theme colors only for the
+   chrome around the sheet (the bar with Back and progress, the desk behind it). */
+
+:root {
+  --paper: #fbfaf7;
+  --paper-sunk: #f3f1ea;
+  --ink: #1d1d1b;
+  --ink-soft: #4a4843;
+  --muted: #6f6d67;
+  --rule: #d8d5cc;
+  --white: #ffffff;
+  --green: #3f6b5a;
+  --green-deep: #2c4d40;
+  --green-wash: rgba(63, 107, 90, 0.16);
+  --amber: #8a5a2b;
+
+  --desk: var(--tg-theme-secondary-bg-color, #ece9e1);
+  --chrome-text: var(--tg-theme-text-color, #1d1d1b);
+  --chrome-link: var(--tg-theme-link-color, #3f6b5a);
+  --chrome-hint: var(--tg-theme-hint-color, #a9a69d);
+  --chrome-accent: var(--tg-theme-button-color, #3f6b5a);
+
+  --serif: "New York", ui-serif, "Iowan Old Style", "Charter", "Noto Serif", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 16px;
+  --s4: 24px;
+  --s5: 32px;
+  --r: 12px;
+  --r-small: 8px;
+
+  --top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+  --bottom: var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--top);
+  background: var(--desk);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+/* ---------- chrome ---------- */
+
+.bar {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s1) 20px;  /* the sheet's side padding, so Back sits on its text column */
+  min-height: 52px;
+}
+
+.back {
+  flex: none;
+  min-height: 44px;
+  padding: 0 var(--s2) 0 0;
+  border: 0;
+  background: none;
+  color: var(--chrome-link);
+  font-size: 16px;
+}
+.back::before { content: "‹ "; font-size: 20px; line-height: 1; }
+
+.progress {
+  flex: 1;
+  display: flex;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.progress li {
+  flex: 1;
+  max-width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chrome-hint);
+  opacity: 0.45;
+}
+.progress li.done,
+.progress li.now { background: var(--chrome-accent); opacity: 1; }
+.progress li.done { opacity: 0.55; }
+
+/* ---------- the sheet ---------- */
+
+.sheet {
+  flex: 1;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s5) 20px calc(var(--s4) + var(--bottom));
+  background: var(--paper);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -1px 0 rgba(29, 29, 27, 0.06);
+}
+
+.card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  animation: arrive 180ms ease-out;
+}
+
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+  .chip, .step, .next { transition: none; }
+}
+
+.label {
+  margin: 0 0 var(--s2);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.q {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 27px;
+  font-weight: 500;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.pitch .q { font-size: 26px; line-height: 1.28; }
+.pitch { justify-content: center; }
+.pitch .next { margin-top: var(--s5); }
+
+.hint {
+  margin: var(--s3) 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.status {
+  margin: auto;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- why this? ---------- */
+
+.why {
+  align-self: flex-start;
+  min-height: 44px;
+  margin-top: var(--s1);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 15px;
+  color: var(--green);
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}
+.why[aria-expanded="true"] { text-decoration-style: solid; }
+
+.because {
+  margin: 0 0 var(--s2);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* ---------- the blot ---------- */
+
+/* The blot is its own sheet of paper (blot.js paints the paper color #f6f1e6); before
+   it is drawn the canvas shows that same paper, so nothing jumps when the ink lands. */
+.blot {
+  display: block;
+  aspect-ratio: 1;
+  height: auto;
+  background: #f6f1e6;
+  border-radius: var(--r-small);
+  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.06), 0 1px 2px rgba(29, 29, 27, 0.06);
+}
+.blot.full {
+  width: 100%;
+  max-width: min(100%, 58vh);
+  margin: var(--s1) auto 0;
+}
+.blot.small {
+  width: 104px;
+  margin: 0 0 var(--s3);
+}
+
+.reveal .lead { margin-top: var(--s3); font-family: var(--serif); font-size: 19px; color: var(--ink-soft); }
+
+.nudge {
+  margin: var(--s2) 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+/* ---------- the tarot card ---------- */
+
+/* 2:3 like the deck's 600x900 art, as tall as the blot is allowed to be. One tap turns it
+   over; it never turns back. */
+.tarot {
+  display: block;
+  position: relative;
+  width: min(100%, 38vh, 340px);
+  aspect-ratio: 2 / 3;
+  margin: var(--s1) auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  perspective: 1400px;
+}
+.tarot:disabled { cursor: default; }
+.tarot .faces {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 640ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.tarot.flipped .faces { transform: rotateY(180deg); }
+.tarot .face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--r-small);
+  background: #f6f1e6;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 2px 6px rgba(29, 29, 27, 0.10);
+}
+.tarot .face-front { transform: rotateY(180deg); }
+.tarot img, .tarot .drawn-back { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tarot:active:not(:disabled) .faces { transform: scale(0.985); }
+@media (prefers-reduced-motion: reduce) {
+  .tarot .faces { transition: none; }
+}
+
+/* The back when the deck has none: ink on the same paper, a ruled frame and a doubled
+   diamond, drawn with borders only. */
+.drawn-back { position: relative; background: #f6f1e6; }
+.drawn-back::before {
+  content: "";
+  position: absolute;
+  inset: 7%;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 4px #f6f1e6, inset 0 0 0 5px var(--ink-soft);
+}
+.drawn-back::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30%;
+  aspect-ratio: 1;
+  border: 1.5px solid var(--ink);
+  transform: translate(-50%, -50%) rotate(45deg);
+  box-shadow: inset 0 0 0 7px #f6f1e6, inset 0 0 0 8px var(--ink);
+}
+
+/* The face when its art won't load: the name, set on the card's paper. */
+.paper-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: var(--s3);
+  background: #f6f1e6;
+  font-family: var(--serif);
+  font-size: 24px;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--ink);
+}
+.paper-face.tarot-small { font-size: 11px; padding: var(--s1); }
+
+.card-name {
+  margin: var(--s3) 0 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--ink);
+}
+
+.tarot-small {
+  display: block;
+  width: 72px;
+  aspect-ratio: 2 / 3;
+  margin: 0 0 var(--s3);
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 1px 2px rgba(29, 29, 27, 0.06);
+}
+
+/* ---------- spreads ---------- */
+/* The mirror (tilia/mirror.py) lays spreads out the same way; change both together. */
+
+/* A spread is laid out as the cards would lie on a table: three in a row; for a
+   relationship, you and them with the space between in the middle; the cross as a
+   centre pair with what's asked of you above, the root below and where it's heading to
+   the right. Each slot is a small card over its position's name. */
+.spread {
+  --cw: 68px;
+  --col: 100px;
+  display: grid;
+  grid-template-columns: repeat(3, var(--col));
+  justify-content: center;
+  gap: var(--s3) 12px;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  text-align: center;
+}
+.slot-card {
+  display: block;
+  position: relative;
+  width: var(--cw);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #f6f1e6;
+  box-shadow: 0 0 0 1px rgba(29, 29, 27, 0.08), 0 1px 2px rgba(29, 29, 27, 0.06);
+}
+.slot-card img, .slot-card .drawn-back { display: block; }
+.slot-card img, .slot-card .drawn-back, .slot-card .paper-face {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.slot-card .paper-face { padding: var(--s1); font-size: 11px; line-height: 1.2; }
+.slot-pos {
+  margin-top: var(--s2);
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--ink-soft);
+  text-wrap: balance;
+}
+.slot-name { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--muted); }
+
+.spread-three { grid-template-areas: "p1 p2 p3"; }
+.spread-relationship { grid-template-areas: "p1 p3 p2"; }
+.spread-relationship .p1 { grid-area: p1; }
+.spread-relationship .p2 { grid-area: p2; }
+.spread-relationship .p3 { grid-area: p3; }
+
+.spread-cross {
+  grid-template-areas: "p4 p4 ." "p1 p2 p5" "p3 p3 .";
+  grid-template-columns: var(--col) var(--col) calc(var(--col) + var(--s3));
+  align-items: start;  /* the cards line up; long names hang below */
+}
+.spread-cross .p1 { grid-area: p1; }
+.spread-cross .p2 { grid-area: p2; }
+.spread-cross .p3 { grid-area: p3; }
+.spread-cross .p4 { grid-area: p4; }
+.spread-cross .p5 { grid-area: p5; justify-self: end; width: var(--col); }
+
+/* The cross on the pitch: smaller cards and tighter rows, so its five names and the
+   pitch still leave Begin on a phone's first screen. */
+.spread-cross.spread-down { --cw: 40px; --col: 96px; row-gap: var(--s2); margin-top: var(--s3); }
+.spread-cross.spread-down .p5 { width: auto; }
+.spread-cross.spread-down .slot-pos { margin-top: var(--s1); font-size: 13px; }
+
+/* "up": the card about the whole spread, every card face up, a little smaller */
+.spread-up { --cw: 60px; margin: 0 0 var(--s4); }
+
+/* "mini": above each card's turn, the spread in small, this card's place outlined */
+.spread-mini {
+  --cw: 26px;
+  --col: auto;
+  gap: var(--s1);
+  margin: 0 0 var(--s3);
+}
+.spread-mini.spread-cross { grid-template-columns: auto auto auto; }
+.spread-mini.spread-cross .p5 { width: auto; margin-left: var(--s2); }
+.spread-mini .slot-card .paper-face { font-size: 0; }
+.spread-mini .here .slot-card { outline: 1.5px solid var(--ink); outline-offset: 2px; }
+
+.spread-reveal .tarot { width: min(100%, 32vh, 280px); }
+
+/* Above a spread card's question: the card, small, and where it lies. */
+.card-at { display: flex; align-items: center; gap: var(--s3); margin: 0 0 var(--s3); }
+.card-at .tarot-small { flex: none; margin: 0; }
+.card-at p { margin: 0; }
+.card-at-pos { font-family: var(--serif); font-size: 19px; line-height: 1.25; color: var(--ink); }
+.card-at-name { margin-top: 2px !important; font-size: 14px; color: var(--muted); }
+
+@media (max-width: 359px) {
+  /* The cross's long names don't fit three across: a list, in the order they're read. */
+  .spread-cross:not(.spread-mini) { display: flex; flex-direction: column; align-items: stretch; gap: var(--s2); }
+  .spread-cross:not(.spread-mini) .slot {
+    display: grid;
+    grid-template-columns: var(--cw) 1fr;
+    column-gap: 12px;
+    align-items: center;
+    width: auto;
+    text-align: left;
+    --cw: 40px;
+  }
+  .spread-cross:not(.spread-mini) .slot-card { grid-row: 1 / span 2; }
+  .spread-cross:not(.spread-mini) .slot-pos { margin: 0; align-self: end; }
+  .spread-cross:not(.spread-mini) .slot-name { align-self: start; }
+  .spread-cross:not(.spread-mini) .slot-pos:last-child { align-self: center; grid-row: 1 / span 2; }
+  .spread:not(.spread-mini) { --col: 88px; column-gap: var(--s2); }
+}
+
+/* ---------- inputs ---------- */
+
+.chips, .write, .mood, .slider { margin-top: var(--s4); }
+
+.chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.chips .hint { flex-basis: 100%; margin-top: var(--s1); font-size: 14px; }
+.chips .full { margin-top: 0; color: var(--amber); }
+
+.chip {
+  min-height: 44px;
+  padding: 10px var(--s3);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--white);
+  font-size: 16px;
+  line-height: 1.25;
+  text-align: left;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+.chip:active { transform: scale(0.97); }
+.chip[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: var(--white); }
+
+.box {
+  display: block;
+  width: 100%;
+  min-height: 132px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--white);
+  color: var(--ink);
+  font: 17px/1.45 var(--sans);
+  resize: vertical;
+}
+.box::placeholder { color: #a5a29a; }
+.box:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px var(--green-wash); }
+
+.left {
+  margin: var(--s2) 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.left.low { color: var(--amber); }
+
+/* 0-10 as two rows of a keypad (0-5 over 6-10): eleven steps in one row are under
+   44px wide on a phone. The short second row sits centered under the first. */
+.scale { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
+
+.step {
+  flex: 0 0 calc((100% - 5 * var(--s2)) / 6);
+  min-width: 44px;
+  height: 52px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-small);
+  background: var(--white);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+@media (max-width: 359px) {
+  /* Keep six to a row on the smallest phones: about 43px wide, 52px tall. */
+  .scale { gap: var(--s1); }
+  .step { flex-basis: calc((100% - 5 * var(--s1)) / 6); min-width: 0; }
+}
+.step:active { transform: scale(0.95); }
+.step[aria-checked="true"] { background: var(--green); border-color: var(--green); color: var(--white); }
+
+.ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--s2);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.value {
+  margin: 0 0 var(--s1);
+  font-family: var(--serif);
+  font-size: 34px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.slider.unset .value { font-family: var(--sans); font-size: 15px; line-height: 38px; color: var(--muted); }
+.range { display: block; width: 100%; height: 44px; margin: 0; accent-color: var(--green); }
+.slider.unset .range { opacity: 0.5; }
+
+/* ---------- the one button ---------- */
+
+.next {
+  margin-top: auto;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px var(--s3);
+  border: 0;
+  border-radius: var(--r);
+  background: var(--green);
+  color: var(--white);
+  font-size: 17px;
+  font-weight: 600;
+  box-shadow: 0 2px 0 var(--green-deep), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+.card > :has(+ .next) { margin-bottom: var(--s5); }
+.next:active { transform: translateY(2px); box-shadow: 0 0 0 var(--green-deep); }
+
+/* ---------- plain-browser preview and device check ---------- */
+
+.payload {
+  margin: var(--s4) 0 0;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--paper-sunk);
+  font: 13px/1.5 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diag {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--s3) 20px calc(var(--s3) + var(--bottom));
+  color: var(--chrome-text);
+  font-size: 13px;
+}
+.diag h2 { margin: 0 0 var(--s2); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+.diag dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--s1) var(--s3); margin: 0; }
+.diag dt { color: var(--chrome-hint); }
+.diag dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+
+@media (min-width: 600px) {
+  body { padding-top: calc(var(--top) + var(--s4)); }
+  .sheet { border-radius: 20px; flex: none; min-height: 560px; margin-bottom: var(--s4); }
+  .q { font-size: 30px; }
+  .pitch .q { font-size: 30px; }
+}

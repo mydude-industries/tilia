@@ -20,6 +20,8 @@ A plain question passes when the context shows a real, specific, timely reason t
 - A follow-up on a real thread from your last conversation: "Last night you were stuck between telling her now or waiting until after the weekend. Where did you land?" when the conversation shows that decision.
 - Warmth inside a specific message is fine: "You were going to try sending Riley one line before going quiet. Has a moment come up yet?" when that's their open challenge or goal.
 
+- When REASON is `card`, a short, light invitation to look at the card or blot ("Drew you a card. Want to see it?") is specific: the card or blot rides as a button under the message, so it is the anchor. Don't fail it for not naming anything from their life. Fail it if it's heavy, asks about their feelings, says what the card means, or the coach's most recent turn is marked `[struggling]`.
+
 - After a crisis moment (REASON says a conversation included one; the episode is over), a short message of warmth and presence with one easy question about today ("I've been thinking about you since the other night. Did you get any sleep?") is not generic: the hard night is the specific anchor. Don't fail it for being simple. Fail it instead if it asks about the crisis, the plan or why, mentions methods or means, sounds cheerful, or nudges an assignment.
 
 # Always generic

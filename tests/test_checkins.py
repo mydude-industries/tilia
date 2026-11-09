@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tilia import checkins, paths, signals
+from tilia import checkins, entries, paths, signals
 from tilia.config import Config
 from tilia.store import Store
 
@@ -15,6 +15,7 @@ PROMPTS = paths.REPO_ROOT / "prompts"
 DRAFT_SYS = (PROMPTS / "checkin.md").read_text(encoding="utf-8")
 TEST_SYS = (PROMPTS / "generic_test.md").read_text(encoding="utf-8")
 SIG_SYS = (PROMPTS / "signals.md").read_text(encoding="utf-8")
+TAROT_SYS = (PROMPTS / "tarot_read.md").read_text(encoding="utf-8")
 SPECIFIC = "Did the one line go out before you went quiet on Riley last night, or did it stay in your head?"
 
 
@@ -46,8 +47,11 @@ class FakeTG:
 
 
 def cfg(**kw):
+    # proactive cards are off unless a test is about them: they would otherwise join every
+    # candidate list (a card needs no conversation at all)
     base = dict(chat_id=4242, tone="direct_soft", goal="stop going quiet on Riley",
-                threads=[{"name": "Riley", "chat_id": 7}, {"name": "Jo", "chat_id": 8}])
+                threads=[{"name": "Riley", "chat_id": 7}, {"name": "Jo", "chat_id": 8}],
+                cards=False)
     base.update(kw)
     return Config(**base)
 
@@ -65,6 +69,10 @@ def fake(draft=None, verdict=None, sig=None, calls=None):
             out = verdict if verdict is not None else {"generic": False, "why": "names the challenge"}
         elif system == SIG_SYS:
             out = sig if sig is not None else {"signals": []}
+        elif system == TAROT_SYS:
+            out = {"read": "A leap taken lightly."}
+        elif system == (PROMPTS / "spread_read.md").read_text(encoding="utf-8"):
+            out = {"read": "Three cards, one thread."}
         else:
             raise AssertionError("unexpected system prompt")
         return SimpleNamespace(stdout=json.dumps({"result": json.dumps(out), "is_error": False}),
@@ -614,3 +622,275 @@ def test_intent_context_names_quiet_hours(store):
     store.add_signal(0, "intent", "check on me tonight", NOW - H)
     ctx = checkins.candidates(store, cfg(quiet_start=22, quiet_end=9), NOW)[0].context
     assert "quiet hours are 22:00-09:00" in ctx
+
+
+# ---- the card check-in (mirror D7) ----------------------------------------------
+
+CARD_LINE = "Drew you a card. Want to see it?"
+
+
+@pytest.fixture
+def talked(store, clock):
+    """They have talked to Tilia before (a card never comes on a fresh install), and that
+    silence's care check-in already went, so the card is the only candidate."""
+    clock.t = NOW - 10 * D
+    store.add_turn("user", "hi, I'm Sam")
+    clock.t = NOW
+    store.set_meta("used_checkin_keys", json.dumps([f"c:{store.last_turn_id('user')}"]))
+
+
+def card_entry(store, clock, type_, at, status="open", source="ask"):
+    clock.t = at
+    eid = store.add_entry(type_, entries.new_token(), source, status=status,
+                          card="00-the-fool" if type_ == "tarot" else None,
+                          seed=7 if type_ == "blot" else None)
+    clock.t = NOW
+    return eid
+
+
+def card_reasons(store, now=NOW, **kw):
+    return [c.reason for c in checkins.candidates(store, cfg(cards=True, **kw), now)]
+
+
+def test_card_candidate_after_quiet_week(store, talked):
+    [c] = checkins.candidates(store, cfg(cards=True), NOW)
+    assert c.reason == "card" and c.prio == 5 and c.at == ""
+    assert c.key == f"k:{NOW.date().isoformat()}"
+    assert CARD_LINE in c.context or "light" in c.context
+
+
+@pytest.mark.parametrize("status", ["open", "expired", "done"])
+def test_card_spacing_counts_unopened(store, clock, talked, status):
+    card_entry(store, clock, "tarot", NOW - 6 * D, status=status)
+    assert card_reasons(store) == []
+    later = NOW - 6 * D + checkins.CARD_EVERY + timedelta(minutes=1)
+    assert card_reasons(store, later) == ["card"]
+
+
+def test_card_spacing_counts_any_source_and_blots(store, clock, talked):
+    card_entry(store, clock, "blot", NOW - 2 * D, source="checkin")
+    assert card_reasons(store) == []
+    store._x("DELETE FROM entries")
+    card_entry(store, clock, "check_story", NOW - 2 * D)  # a worksheet is not a card
+    assert card_reasons(store) == ["card"]
+
+
+def test_card_respects_cap_and_quiet(store, talked):
+    for hour in (22, 23, 0, 8):
+        assert checkins.maybe_send(store, cfg(cards=True), NOW.replace(hour=hour),
+                                   no_claude) is False
+    store.add_checkin("care", "x", True)
+    assert checkins.maybe_send(store, cfg(cards=True, checkin_cap=1), NOW, no_claude) is False
+    assert checkins.maybe_send(store, cfg(cards=True, paused_until=(NOW + H).isoformat()),
+                               NOW, no_claude) is False
+    assert queued(store) == [] and store.entries() == []
+
+
+def test_card_never_in_or_soon_after_crisis(store, clock, talked):
+    store.set_meta("crisis_last", (NOW - 2 * H).isoformat())
+    assert card_reasons(store) == []
+    assert checkins.maybe_send(store, cfg(cards=True), NOW, no_claude) is False  # episode
+    store.set_meta("crisis_last", (NOW - (24 + 95) * H).isoformat())
+    assert card_reasons(store) == []
+    store.set_meta("crisis_last", (NOW - (24 + 97) * H).isoformat())
+    assert card_reasons(store) == ["card"]
+    # a crisis turn counts the same way, with or without crisis_last
+    store.set_meta("crisis_last", None)
+    clock.t = NOW - (24 + 95) * H
+    store.add_turn("coach", "Are you safe right now?", "crisis")
+    clock.t = NOW
+    assert card_reasons(store) == []
+    assert card_reasons(store, NOW + 2 * H) == ["card"]
+
+
+def test_card_not_after_struggling(store, clock):
+    clock.t = NOW - 50 * H
+    store.add_turn("user", "everything is heavy today")
+    store.add_turn("coach", "That sounds like a lot.", "struggling")
+    clock.t = NOW
+    assert "card" not in card_reasons(store)
+    assert "card" not in card_reasons(store, NOW + 30 * D)  # until a later turn isn't struggling
+    clock.t = NOW - 49 * H
+    store.add_turn("user", "a bit better now")
+    assert "card" not in card_reasons(store)  # the last *coach* turn is what counts
+    store.add_turn("coach", "Glad to hear it.", "ok")
+    clock.t = NOW
+    assert "card" in card_reasons(store)
+
+
+def test_cards_off_and_worksheets_off(store, talked):
+    assert checkins.candidates(store, cfg(cards=False), NOW) == []
+    assert checkins.candidates(store, cfg(cards=True, worksheets=False), NOW) == []
+    assert checkins.maybe_send(store, cfg(cards=False), NOW, no_claude) is False
+
+
+def test_card_loses_to_care_and_others(store, clock, talked):
+    due_challenge(store)
+    cands = checkins.candidates(store, cfg(cards=True), NOW)
+    assert [c.reason for c in cands] == ["assignment_due", "card"]
+    store._x("DELETE FROM assignments")
+    _talk(store, clock, NOW - 40 * H, FOUR[:1])
+    cands = checkins.candidates(store, cfg(cards=True), NOW)
+    assert [c.reason for c in cands] == ["care", "card"]
+
+
+def test_no_card_on_a_fresh_install(store, clock):
+    assert checkins.candidates(store, cfg(cards=True), NOW) == []
+    store.add_turn("coach", "Hi, I'm Tilia.")  # only Tilia has spoken: still fresh
+    assert checkins.candidates(store, cfg(cards=True), NOW + H) == []
+    store.add_turn("user", "hi")
+    assert "card" in [c.reason for c in checkins.candidates(store, cfg(cards=True), NOW + H)]
+
+
+def test_tarot_sheet_missing_falls_back_to_blot(store, talked, monkeypatch):
+    assert entries.available_cards()  # the deck is there
+    monkeypatch.setattr(entries, "available_types",
+                        lambda: [t for t in entries.TYPES if t != "tarot"])
+    assert checkins._card_type(store) == "blot"
+    [c] = checkins.candidates(store, cfg(cards=True), NOW)
+    assert c.reason == "card" and "ink blot" in c.context
+
+
+def test_no_card_without_its_sheet(store, talked, monkeypatch):
+    monkeypatch.setattr(entries, "available_types", lambda: ["check_story"])
+    assert checkins.candidates(store, cfg(cards=True), NOW) == []
+    monkeypatch.undo()
+    monkeypatch.setattr(checkins.worksheets, "prepare", lambda *a, **k: None)
+    draft = {"message": CARD_LINE, "not_before": None, "why": "a weekly card"}
+    assert checkins.maybe_send(store, cfg(cards=True), NOW, fake(draft)) is False
+    assert queued(store) == [] and rows(store) == [] and store.last_turn_id("coach") is None
+
+
+def test_card_checkin_attaches_button_and_entry(store, talked):
+    calls = []
+    draft = {"message": CARD_LINE, "not_before": None, "why": "a weekly card"}
+    assert checkins.maybe_send(store, cfg(cards=True), NOW, fake(draft, calls=calls)) is True
+    [item] = json.loads(store.get_meta("outbox"))
+    assert item["text"] == CARD_LINE and "web_app" in json.dumps(item["markup"])
+    [e] = store.entries()
+    assert e.source == "checkin" and e.status == "open" and e.type in ("tarot", "blot")
+    assert e.token in json.dumps(item["markup"])
+    assert [r["reason"] for r in rows(store)] == ["card"] and rows(store)[0]["sent"] == 1
+    assert store.open_assignments() == []  # a card is never an assignment
+    # retired for good once sent, and the week's spacing holds after that
+    assert checkins.candidates(store, cfg(cards=True), NOW + 2 * H) == []
+    assert checkins.candidates(store, cfg(cards=True), NOW + 6 * D) == []
+
+
+def test_generic_card_line_makes_no_entry(store, talked):
+    draft = {"message": "Hey! Thinking of you!", "not_before": None, "why": ""}
+    assert checkins.maybe_send(store, cfg(cards=True), NOW,
+                               fake(draft, verdict={"generic": True, "why": "x"})) is False
+    assert store.entries() == [] and queued(store) == []
+    assert checkins.candidates(store, cfg(cards=True), NOW + H) == []  # retired for today
+
+
+def test_card_alternates_and_uses_blot_without_deck(store, clock, talked, monkeypatch):
+    def ctx():
+        [c] = checkins.candidates(store, cfg(cards=True), NOW)
+        return c.context
+    assert checkins._card_type(store) == "tarot" and "tarot card" in ctx()
+    card_entry(store, clock, "tarot", NOW - 8 * D)
+    assert checkins._card_type(store) == "blot" and "ink blot" in ctx()
+    card_entry(store, clock, "blot", NOW - 7 * D - H)
+    assert checkins._card_type(store) == "tarot"
+    monkeypatch.setattr(entries, "available_cards", lambda: [])
+    assert checkins._card_type(store) == "blot" and "ink blot" in ctx()
+    draft = {"message": CARD_LINE, "not_before": None, "why": "a weekly card"}
+    assert checkins.maybe_send(store, cfg(cards=True), NOW, fake(draft)) is True
+    assert store.entries()[-1].type == "blot"
+
+
+def test_worksheet_assignment_nudge_carries_button(store):
+    aid = store.add_assignment("worksheet", "Check the story: the fight about Sunday",
+                               NOW.date().isoformat())
+    token = entries.new_token()
+    store.add_entry("check_story", token, "assignment", assignment_id=aid)
+    assert checkins.maybe_send(store, cfg(), NOW, fake()) is True
+    [item] = json.loads(store.get_meta("outbox"))
+    assert token in json.dumps(item["markup"])
+    assert len(store.entries()) == 1  # the same entry, not a new one
+    # an assignment whose entry is no longer open nudges without a button
+    aid2 = store.add_assignment("worksheet", "Ride the wave", NOW.date().isoformat())
+    store.add_entry("ride_wave", entries.new_token(), "assignment", assignment_id=aid2,
+                    status="expired")
+    assert checkins.maybe_send(store, cfg(), NOW + H, fake()) is True
+    assert "markup" not in json.loads(store.get_meta("outbox"))[-1]
+
+
+def test_intent_followup_marks_entry(store):
+    sid = store.add_signal(0, "intent", "check on me Friday about sending Riley one line", NOW - H)
+    other = store.add_entry("plan_talk", entries.new_token(), "ask")
+    eid = store.add_entry("plan_talk", entries.new_token(), "ask")
+    store.finish_entry(eid, "Try one line Friday.", ["conflict"], None, followup_signal=sid)
+    assert checkins.maybe_send(store, cfg(), NOW, fake()) is True
+    assert store.get_entry(eid).followup_at is not None
+    assert store.get_entry(other).followup_at is None
+    assert "markup" not in json.loads(store.get_meta("outbox"))[-1]
+
+
+def test_checkin_prompt_has_card():
+    flat = " ".join(DRAFT_SYS.split())
+    assert "`card`" in DRAFT_SYS and CARD_LINE in flat
+    card = flat.split("`card`", 1)[1]
+    assert "struggling" in card and "button" in card
+
+
+def test_generic_test_passes_card_lines():
+    flat = " ".join(TEST_SYS.split())
+    assert "`card`" in flat
+    passes = flat.split("Not generic", 1)[1].split("Always generic", 1)[0]
+    assert "`card`" in passes and CARD_LINE in passes
+
+
+def test_card_checkin_sometimes_spread(store, clock, talked, monkeypatch):
+    """When the card would be tarot, a three-card spread instead at most every 4th card."""
+    def ctx():
+        [c] = checkins.candidates(store, cfg(cards=True), NOW)
+        return c.context
+    def add(t, days):
+        card_entry(store, clock, t, NOW - days * D)
+        if t.startswith("spread_"):
+            store._x("UPDATE entries SET card=? WHERE id=(SELECT max(id) FROM entries)",
+                     ("00-the-fool.01-the-magician.02-the-high-priestess",))
+    assert checkins._card_type(store) == "tarot"  # too few cards yet for a spread
+    add("blot", 60)
+    add("tarot", 50)
+    assert checkins._card_type(store) == "blot"
+    add("blot", 40)
+    assert checkins._card_type(store) == "spread_three"  # 3 cards, none a spread
+    assert "three-card spread" in ctx()
+    with monkeypatch.context() as m:  # M2: only CHECKIN_SPREAD reads as a spread
+        m.setattr(checkins, "_card_type", lambda store: "spread_cross")
+        assert checkins.candidates(store, cfg(cards=True), NOW) == []
+    add("spread_three", 30)
+    assert checkins._card_type(store) == "blot"  # a spread is tarot for the alternation
+    add("blot", 20)
+    assert checkins._card_type(store) == "tarot"  # a spread among the last 3: plain tarot
+    add("tarot", 10)
+    assert checkins._card_type(store) == "blot"
+    add("blot", 8)
+    assert checkins._card_type(store) == "spread_three"  # the 4th card after the spread
+    # a spread counts toward the week's spacing like any card
+    card_entry(store, clock, "spread_cross", NOW - 2 * D)
+    assert card_reasons(store) == []
+    store._x("DELETE FROM entries WHERE type='spread_cross'")
+    # no spread sheet, or a deck too small: plain tarot
+    monkeypatch.setattr(entries, "available_types",
+                        lambda: [t for t in entries.TYPES if t != "spread_three"])
+    assert checkins._card_type(store) == "tarot"
+    monkeypatch.undo()
+    monkeypatch.setattr(entries, "available_cards", lambda: [{"id": "00-the-fool"}] * 2)
+    assert checkins._card_type(store) == "tarot"
+
+
+def test_spread_checkin_attaches_spread(store, clock, talked):
+    for t, days in (("blot", 30), ("tarot", 20), ("blot", 10)):
+        card_entry(store, clock, t, NOW - days * D)
+    draft = {"message": CARD_LINE, "not_before": None, "why": "a weekly card"}
+    calls = []
+    assert checkins.maybe_send(store, cfg(cards=True), NOW, fake(draft, calls=calls)) is True
+    e = store.entries()[-1]
+    assert e.type == "spread_three" and e.source == "checkin" and len(e.card.split(".")) == 3
+    [item] = json.loads(store.get_meta("outbox"))
+    assert "t=spread_three" in json.dumps(item["markup"])

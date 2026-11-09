@@ -1,5 +1,6 @@
 """SQLite persistence. Timestamps are timezone-aware ISO-8601 strings."""
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -16,10 +17,11 @@ CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY, at TEXT NOT NULL, cha
 CREATE TABLE IF NOT EXISTS corrections(id INTEGER PRIMARY KEY, at TEXT NOT NULL, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS journal(id INTEGER PRIMARY KEY, at TEXT NOT NULL, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY, at TEXT NOT NULL, text TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source TEXT NOT NULL, created TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', wording TEXT, answers TEXT, answered_at TEXT, reply TEXT, sealed_read TEXT, card TEXT, seed INTEGER, assignment_id INTEGER, turn_id INTEGER, mood_before INTEGER, mood_after INTEGER, outcome INTEGER, themes TEXT, followup_signal INTEGER, followup_at TEXT);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 TABLES = ["turns", "assignments", "checkins", "text_cursor", "text_msgs",
-          "signals", "corrections", "journal", "pending", "meta"]
+          "signals", "corrections", "journal", "pending", "entries", "meta"]
 # tables with a timestamp column, for forget("day")
 _DAY_COL = {"turns": "at", "assignments": "created", "checkins": "at", "text_msgs": "at",
             "signals": "at", "corrections": "at", "journal": "at", "pending": "at"}
@@ -44,6 +46,39 @@ class Assignment:
     status: str
     followed_up_at: str | None
     notes: str | None
+
+
+@dataclass
+class Entry:
+    id: int
+    token: str
+    type: str
+    source: str
+    created: str
+    status: str
+    wording: dict | None
+    answers: list | None
+    answered_at: str | None
+    reply: str | None
+    sealed_read: str | None
+    card: str | None
+    seed: int | None
+    assignment_id: int | None
+    turn_id: int | None
+    mood_before: int | None
+    mood_after: int | None
+    outcome: int | None
+    themes: list[str]
+    followup_signal: int | None
+    followup_at: str | None
+
+
+def _loads(s):
+    return None if s is None else json.loads(s)
+
+
+def _dumps(v):
+    return None if v is None else json.dumps(v)
 
 
 def local_now() -> datetime:
@@ -104,6 +139,13 @@ class Store:
     def add_turn(self, role, text, state="ok"):
         self._x("INSERT INTO turns(at,role,text,state) VALUES (?,?,?,?)",
                 (self._clock().isoformat(), role, text, state))
+
+    def last_turn_id(self, role=None) -> int | None:
+        if role is None:
+            r = self._conn.execute("SELECT MAX(id) m FROM turns").fetchone()
+        else:
+            r = self._conn.execute("SELECT MAX(id) m FROM turns WHERE role=?", (role,)).fetchone()
+        return r["m"]
 
     def recent_turns(self, n) -> list[Turn]:
         rows = self._conn.execute(
@@ -181,14 +223,76 @@ class Store:
         return n
 
     # signals
-    def add_signal(self, chat_id, kind, detail, at):
-        self._x("INSERT INTO signals(at,chat_id,kind,detail) VALUES (?,?,?,?)",
-                (at.isoformat(), chat_id, kind, detail))
+    def add_signal(self, chat_id, kind, detail, at) -> int:
+        return self._x("INSERT INTO signals(at,chat_id,kind,detail) VALUES (?,?,?,?)",
+                (at.isoformat(), chat_id, kind, detail)).lastrowid
 
     def signals_since(self, dt) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM signals ORDER BY id").fetchall()
         cutoff = dt.astimezone()
         return [dict(r) for r in rows if datetime.fromisoformat(r["at"]) >= cutoff]
+
+    # entries
+    @staticmethod
+    def _entry(r) -> Entry:
+        return Entry(r["id"], r["token"], r["type"], r["source"], r["created"], r["status"],
+                     _loads(r["wording"]), _loads(r["answers"]), r["answered_at"], r["reply"],
+                     r["sealed_read"], r["card"], r["seed"], r["assignment_id"], r["turn_id"],
+                     r["mood_before"], r["mood_after"], r["outcome"],
+                     _loads(r["themes"]) or [], r["followup_signal"], r["followup_at"])
+
+    def add_entry(self, type, token, source, *, wording=None, card=None, seed=None,
+                  assignment_id=None, turn_id=None, status="open", answers=None) -> int:
+        return self._x(
+            "INSERT INTO entries(token,type,source,created,status,wording,answers,card,seed,"
+            "assignment_id,turn_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (token, type, source, self._clock().isoformat(), status, _dumps(wording),
+             _dumps(answers), card, seed, assignment_id, turn_id)).lastrowid
+
+    def entry_by_token(self, token) -> Entry | None:
+        r = self._conn.execute("SELECT * FROM entries WHERE token=?", (token,)).fetchone()
+        return self._entry(r) if r else None
+
+    def get_entry(self, id) -> Entry | None:
+        r = self._conn.execute("SELECT * FROM entries WHERE id=?", (id,)).fetchone()
+        return self._entry(r) if r else None
+
+    def entries(self, types=None, statuses=None) -> list[Entry]:
+        """Oldest first."""
+        return [self._entry(r) for r in self._conn.execute("SELECT * FROM entries ORDER BY id")
+                if (types is None or r["type"] in types)
+                and (statuses is None or r["status"] in statuses)]
+
+    def set_sealed_read(self, id, text) -> bool:
+        return self._x("UPDATE entries SET sealed_read=? WHERE id=? AND sealed_read IS NULL",
+                       (text, id)).rowcount > 0
+
+    def answer_entry(self, id, answers, mood_before, mood_after) -> None:
+        outcome = (mood_after - mood_before
+                   if mood_before is not None and mood_after is not None else None)
+        self._x("UPDATE entries SET status='answered', answers=?, answered_at=?, "
+                "mood_before=?, mood_after=?, outcome=? WHERE id=?",
+                (_dumps(answers), self._clock().isoformat(), mood_before, mood_after,
+                 outcome, id))
+
+    def finish_entry(self, id, reply, themes, turn_id, followup_signal=None) -> None:
+        self._x("UPDATE entries SET status='done', reply=?, themes=?, turn_id=?, "
+                "followup_signal=? WHERE id=?",
+                (reply, _dumps(themes), turn_id, followup_signal, id))
+
+    def set_entry_followup_at(self, id, at) -> None:
+        self._x("UPDATE entries SET followup_at=? WHERE id=?", (at, id))
+
+    def expire_entries(self, now, ttl) -> int:
+        cutoff = now.astimezone() - ttl
+        ids = [r["id"] for r in self._conn.execute(
+            "SELECT id, created FROM entries WHERE status='open'")
+            if datetime.fromisoformat(r["created"]) < cutoff]
+        self._conn.executemany(
+            "UPDATE entries SET status='expired', sealed_read=NULL WHERE id=?",
+            [(i,) for i in ids])
+        self._commit()
+        return len(ids)
 
     # text messages
     def add_text_msgs(self, rows):
@@ -260,14 +364,24 @@ class Store:
                 "SELECT MAX(id) m FROM turns WHERE role='user'").fetchone()
             if r["m"] is not None:
                 self._conn.execute("DELETE FROM turns WHERE id>=?", (r["m"],))
+                self._conn.execute("DELETE FROM entries WHERE turn_id>=?", (r["m"],))
         elif scope == "day":
             today = now.astimezone().date()
             for t, col in _DAY_COL.items():
                 ids = [r["r"] for r in self._conn.execute(f"SELECT rowid r, {col} c FROM {t}")
                        if _day(r["c"]) == today]
                 self._conn.executemany(f"DELETE FROM {t} WHERE rowid=?", [(i,) for i in ids])
+            ids = [r["id"] for r in self._conn.execute(
+                "SELECT id, created, answered_at FROM entries")
+                if _day(r["created"]) == today
+                or (r["answered_at"] and _day(r["answered_at"]) == today)]
+            self._conn.executemany("DELETE FROM entries WHERE id=?", [(i,) for i in ids])
         else:
             raise ValueError(scope)
+        # patterns are drawn from the entries and could keep forgotten words alive: any
+        # forget takes them all, and the next weekly pass writes them again from what's left
+        self._conn.execute("DELETE FROM entries WHERE type='patterns'")
+        self._conn.execute("DELETE FROM meta WHERE key='patterns_at'")
         self._commit()
         if scope == "all" and self._depth == 0:
             # fold the write-ahead log into the file, then rewrite the file without free pages

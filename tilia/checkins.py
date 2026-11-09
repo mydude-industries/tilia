@@ -9,7 +9,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from . import ai, coach, outbox, paths, profile, texts
+from . import ai, coach, entries, outbox, paths, profile, texts, worksheets
 from .coach import DATA_NOTE, _hm, _tag
 
 SIGNAL_FRESH = timedelta(hours=24)
@@ -26,12 +26,18 @@ CRISIS_RECENT = coach.EPISODE_GAP + timedelta(hours=72)  # episode ended within 
 CRISIS_IN_CONVO = "This conversation included a crisis moment; the episode is over."
 CRISIS_LATELY = "A conversation in the last few days included a crisis moment; the episode is over."
 CONVO_SCAN = 200          # turns searched for the last conversation
+CARD_EVERY = timedelta(days=7)  # an unopened card counts too
+CARD_AFTER_CRISIS = coach.EPISODE_GAP + timedelta(hours=96)  # episode ended over 96 h ago
+CARD_TYPES = entries.CARD_TYPES  # spreads count as cards: one a week, whatever kind
+SPREAD_EVERY = 4  # at most every 4th card offer is a spread (D13: keep it light)
+CHECKIN_SPREAD = "spread_three"
 _STATE, _USED = "checkin_state", "used_signal_ids"
 _USED_KEYS = "used_checkin_keys"  # followup / care keys that already fired
 
 # lower is stronger. A user-requested check-in (intent) is as strong as a due assignment.
 _PRIO = {"assignment": 0, "intent": 0, "conflict": 1, "repair": 1, "unanswered_question": 1,
-         "bid": 3, "pattern_hit": 3, "long_silence": 3, "followup": 3, "anchor": 4, "care": 5}
+         "bid": 3, "pattern_hit": 3, "long_silence": 3, "followup": 3, "anchor": 4, "care": 5,
+         "card": 5}
 
 _WHEN = re.compile(r"\b(today|tonight|this (morning|afternoon|evening)|later|at \d{1,2}"
                    r"|\d{1,2}(:\d\d)? ?(am|pm)|\d{1,2}:\d\d)\b", re.I)
@@ -48,7 +54,8 @@ class Candidate:
     reason: str     # short label, stored in the checkins table (never raw text)
     context: str    # the specifics, used only inside prompts
     key: str = ""   # "a:<assignment id>", "s:<signal id>", "t:<turn id>",
-    #                 "f:<last user turn id>" (followup) or "c:<last turn id>" (care)
+    #                 "f:<last user turn id>" (followup), "c:<last turn id>" (care)
+    #                 or "k:<date>" (card)
     prio: int = 9
     at: str = ""
 
@@ -213,15 +220,15 @@ def _has_crisis(turns) -> bool:
     return any(t.state == "crisis" for t in turns)
 
 
-def _recent_crisis(store, now) -> bool:
-    """A crisis episode that ended within the last 72 h (or is still going)."""
+def _recent_crisis(store, now, within=CRISIS_RECENT) -> bool:
+    """A crisis episode that ended within `within` minus EPISODE_GAP (or is still going)."""
     last = store.get_meta(coach._CRISIS_LAST)
     try:
-        if last and now - datetime.fromisoformat(last) < CRISIS_RECENT:
+        if last and now - datetime.fromisoformat(last) < within:
             return True
     except ValueError:
         pass
-    return any(t.state == "crisis" and now - datetime.fromisoformat(t.at) < CRISIS_RECENT
+    return any(t.state == "crisis" and now - datetime.fromisoformat(t.at) < within
                for t in store.recent_turns(CONVO_SCAN))
 
 
@@ -304,6 +311,59 @@ def _anchor_cand(store, now) -> Candidate | None:
                      f"t:{hits[-1].id}", _PRIO["anchor"], hits[-1].at)
 
 
+def _card_type(store) -> str:
+    """Alternate: tarot unless the last card was tarot (a spread counts as tarot), or there
+    is no deck or tarot sheet. A tarot turn becomes a three-card spread when the last
+    SPREAD_EVERY - 1 cards hold no spread and the deck and sheet allow it."""
+    last = store.entries(types=CARD_TYPES)
+    if (not entries.available_cards() or "tarot" not in entries.available_types()
+            or (last and last[-1].type in entries.TAROT_TYPES)):
+        return "blot"
+    recent = last[-(SPREAD_EVERY - 1):]
+    if (len(recent) == SPREAD_EVERY - 1 and not any(e.type in entries.SPREADS for e in recent)
+            and CHECKIN_SPREAD in entries.available_types()
+            and len(entries.available_cards()) >= len(entries.SPREADS[CHECKIN_SPREAD])):
+        return CHECKIN_SPREAD
+    return "tarot"
+
+
+def _card_cand(store, cfg, now) -> Candidate | None:
+    """Now and then a card or a blot, sent first (D7). Never within a week of another one
+    (opened or not), never in or within 96 h after a crisis episode, never after a
+    struggling turn: a card in a dark moment reads as a cruel joke. Never on a fresh
+    install either: like care, it needs them to have written at least once."""
+    if not (cfg.cards and cfg.worksheets):
+        return None
+    turns = store.recent_turns(CONVO_SCAN)
+    if not any(t.role == "user" for t in turns):
+        return None
+    if any(now - datetime.fromisoformat(e.created) < CARD_EVERY
+           for e in store.entries(types=CARD_TYPES)):
+        return None
+    if _recent_crisis(store, now, CARD_AFTER_CRISIS):
+        return None
+    last_coach = next((t for t in reversed(turns) if t.role == "coach"), None)
+    if last_coach is not None and last_coach.state == "struggling":
+        return None
+    type_ = _card_type(store)
+    if type_ not in entries.available_types():  # no sheet, no button: nothing to invite to
+        return None
+    what = {"tarot": "a tarot card, drawn for them (they read it first, then you)",
+            "blot": "an ink blot, made for them (they say what they see, then you respond)",
+            CHECKIN_SPREAD: "a small three-card spread, drawn for them (they read each card "
+                            "first, then you)",
+            }.get(type_)
+    if what is None:  # a card type with no invite wording: never mislabel it, just skip
+        return None
+    return Candidate(
+        "card",
+        f"It's been a while, so you have {what}. It rides as a button under your message. "
+        "Write one light line inviting them to look, nothing more: nothing heavy, no "
+        "question about their feelings, no assignment. If your most recent state was "
+        "struggling, return no message.",
+        f"k:{now.astimezone().date().isoformat()}", _PRIO["card"], "")
+
+
 def candidates(store, cfg, now) -> list[Candidate]:
     """Every current reason to check in, strongest first. Makes no Claude call."""
     avail, used = _available(store, now), set(_used_keys(store))
@@ -315,6 +375,9 @@ def candidates(store, cfg, now) -> list[Candidate]:
     if not cands:  # before the availability filter: a reason tried or deferred today still counts
         care = _care_cand(store, cfg, now)
         cands = [care] if care else []
+    card = _card_cand(store, cfg, now)
+    if card:  # the lowest: its empty `at` loses every tie, care's included
+        cands.append(card)
     cands = [c for c in cands if ok(c)]
     if cands and _recent_crisis(store, now):
         for c in cands:
@@ -485,7 +548,7 @@ def _consume(store, c: Candidate, now, sent: bool, final: bool) -> None:
         store.set_meta(_USED, json.dumps(used))
     elif kind == "a" and sent:
         store.mark_followed_up(int(ref), now)
-    elif (kind in ("f", "c") and final) or kind == "c":  # care: silence is final too
+    elif (kind in ("f", "k", "c") and final) or kind == "c":  # care: silence is final too
         store.set_meta(_USED_KEYS, json.dumps((_used_keys(store) + [c.key])[-USED_KEEP:]))
 
 
@@ -495,13 +558,40 @@ def _defer(store, c: Candidate, now, until) -> None:
     _save_state(store, st)
 
 
+def _offer(store, cfg, now, c: Candidate, run):
+    """The button that rides with a check-in, if any: a fresh card or blot for `card`, the
+    open worksheet of a due worksheet assignment. An intent check-in that follows up an
+    entry's plan marks that entry, so the mirror shows plan -> what happened."""
+    kind, _, ref = c.key.partition(":")
+    if c.reason == "card":
+        return worksheets.prepare(store, cfg, now, _card_type(store), source="checkin", run=run)
+    if kind == "a":
+        a = next((a for a in store.open_assignments() if a.id == int(ref)), None)
+        if a is not None and a.kind == "worksheet":
+            e = next((e for e in store.entries(statuses=("open",))
+                      if e.assignment_id == a.id), None)
+            if e is not None:
+                try:
+                    return worksheets.offer_for(store, e)
+                except ValueError:  # its sheet is gone: the nudge goes without a button
+                    return None
+    elif kind == "s":
+        for e in store.entries():
+            if e.followup_signal == int(ref):
+                store.set_entry_followup_at(e.id, now.isoformat())
+    return None
+
+
 def maybe_send(store, cfg, now, run=subprocess.run) -> bool:
     """At most one draft and one generic test. True only if a check-in was queued.
     LimitError / NotLoggedIn / MissingCLI propagate to the loop.
 
     A check-in goes to the loop's outbox, which retries for up to 6 h, so it is recorded
     as sent (sent=1, a coach turn, its signal used) when queued. Only silence or a
-    not-before time leave the reason for later; a generic draft retires it."""
+    not-before time leave the reason for later; a generic draft retires it.
+
+    A `card` check-in that passes makes one more AI call: a tarot card's sealed read
+    (worksheets.prepare -> seal), inside the transaction. Its failure never stops the card."""
     if _blocked(store, cfg, now):
         return False
     cands = candidates(store, cfg, now)
@@ -524,7 +614,11 @@ def maybe_send(store, cfg, now, run=subprocess.run) -> bool:
         _consume(store, c, now, sent=False, final=True)
         return False
     with store.atomic():
-        outbox.enqueue(store, msg, now)
+        offer = _offer(store, cfg, now, c, run)
+        if c.reason == "card" and offer is None:  # the sheet went unreadable: no card to send
+            _consume(store, c, now, sent=False, final=True)
+            return False
+        outbox.enqueue(store, msg, now, markup=offer.markup if offer else None)
         store.add_checkin(c.reason, msg, True)
         store.add_turn("coach", msg, "ok")
         _consume(store, c, now, sent=True, final=True)

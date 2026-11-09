@@ -1,0 +1,80 @@
+# The worksheet page on GitHub Pages: https://mydude-industries.github.io/tilia/<tag>/
+# Every deploy rebuilds every v* tag's webapp/ from git, so a tag's page never changes and
+# never disappears; a Mac on an older version keeps opening the page it was released with.
+name: Pages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      preview_ref:
+        description: "Also build this branch, tag or commit at /preview/ (gone on the next deploy)"
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag matches pyproject.toml
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          want="v$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject.toml's version ($want)."
+            exit 1
+          fi
+
+      - name: Build _site
+        env:
+          PREVIEW_REF: ${{ inputs.preview_ref }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          git tag -l 'v*' | while IFS= read -r t; do
+            if git cat-file -e "$t:webapp" 2>/dev/null; then
+              mkdir -p "_site/$t"
+              git archive "$t" webapp | tar -x --strip-components=1 -C "_site/$t"
+            fi
+          done
+          if [ -n "${PREVIEW_REF:-}" ]; then
+            ref=""
+            for cand in "$PREVIEW_REF" "origin/$PREVIEW_REF"; do
+              if git rev-parse --verify --quiet "$cand^{commit}" >/dev/null; then
+                ref="$cand"
+                break
+              fi
+            done
+            if [ -z "$ref" ]; then
+              echo "preview_ref $PREVIEW_REF not found."
+              exit 1
+            fi
+            mkdir -p _site/preview
+            git archive "$ref" webapp | tar -x --strip-components=1 -C _site/preview
+          fi
+          touch _site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

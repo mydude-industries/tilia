@@ -3,7 +3,7 @@
 import subprocess
 from datetime import datetime, timedelta
 
-from . import assignments, coach, config, outbox, paths, profile
+from . import assignments, coach, config, mirror, outbox, paths, profile
 from .typing_indicator import Typing
 
 DOC_LIMIT = 3500
@@ -18,7 +18,10 @@ HELP = """\
 /privacy - what I store, where, and who else sees what
 /quieter, /more - fewer or more check-ins
 /pause [hours] - no check-ins for a while (default 24)
+/worksheets on|off - whether I offer worksheets on my own
+/cards on|off - whether I sometimes send you a card or a blot first
 /export - everything as one markdown file
+/mirror - every worksheet, card and blot you've finished, as a page on your Mac
 /forget last | day | all - delete the last exchange, today, or everything (all asks you to confirm)
 /help - this list"""
 
@@ -124,12 +127,13 @@ def _coach_reply(store, cfg, now, incoming, run, mode, tg, chat_id):
     with store.atomic():
         with Typing(tg, chat_id):
             r = coach.respond(store, cfg, now, incoming, run=run, mode=mode)
-        outbox.enqueue(store, r.reply, now)
+        outbox.enqueue_reply(store, r, now)
     return r
 
 
 def _forget_all(store, now, tg, chat_id, done_text) -> None:
     store.forget("all", now)
+    mirror.after_forget(store, now)
     profile.write("")
     paths.profile_path().with_name("profile.prev.md").unlink(missing_ok=True)
     paths.crisis_log_path().unlink(missing_ok=True)
@@ -215,6 +219,28 @@ def _pause(args, store, cfg, now, tg, chat_id, run):
                      "You can still text me any time.")
 
 
+def _worksheets(args, store, cfg, now, tg, chat_id, run):
+    arg = args[0].lower() if len(args) == 1 else ""
+    if arg not in ("on", "off"):
+        tg.send(chat_id, "Use /worksheets on or /worksheets off.")
+        return
+    cfg.worksheets = arg == "on"
+    config.save(cfg)
+    tg.send(chat_id, "Okay. I'll offer a worksheet when one would help." if cfg.worksheets else
+            "Okay. I won't offer worksheets on my own. Ask any time and you'll get one.")
+
+
+def _cards(args, store, cfg, now, tg, chat_id, run):
+    arg = args[0].lower() if len(args) == 1 else ""
+    if arg not in ("on", "off"):
+        tg.send(chat_id, "Use /cards on or /cards off.")
+        return
+    cfg.cards = arg == "on"
+    config.save(cfg)
+    tg.send(chat_id, "Okay. Now and then I'll send you a card or a blot." if cfg.cards else
+            "Okay. No more cards or blots out of the blue. Ask any time.")
+
+
 def _export(args, store, cfg, now, tg, chat_id, run):
     out = [f"# Tilia export, {now.astimezone():%Y-%m-%d %H:%M}", "", "## Conversation", ""]
     out += [f"- {t.at} {'you' if t.role == 'user' else 'tilia'}: {t.text}"
@@ -239,12 +265,25 @@ def _forget(args, store, cfg, now, tg, chat_id, run):
                          "they're copied again from scratch. type FORGET to confirm.")
     elif scope in ("last", "day"):
         store.forget(scope, now)
+        mirror.after_forget(store, now)
         tg.send(chat_id, "Deleted " + ("the last exchange." if scope == "last" else "today."))
     else:
         tg.send(chat_id, "Use /forget last, /forget day or /forget all.")
 
 
+def _mirror(args, store, cfg, now, tg, chat_id, run):
+    try:
+        mirror.write(store, now)
+    except Exception as e:  # the old page stays as it was; say so instead of going silent
+        from .loop import log  # loop imports this module
+        log(f"mirror failed: {type(e).__name__}")  # the type only, never content
+        tg.send(chat_id, mirror.WRITE_FAILED)
+        return
+    tg.send(chat_id, mirror.REPLY)
+
+
 _COMMANDS = {"/help": _help, "/start": _help, "/privacy": _privacy, "/profile": _profile,
              "/practice": _practice, "/done": _done, "/journal": _journal,
              "/quieter": _quieter, "/more": _more, "/pause": _pause, "/export": _export,
-             "/forget": _forget}
+             "/forget": _forget, "/worksheets": _worksheets, "/cards": _cards,
+             "/mirror": _mirror}

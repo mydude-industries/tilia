@@ -8,7 +8,9 @@ Some of it is uncomfortable. It is written down anyway.
 Everything Tilia keeps is in one folder on your Mac:
 `~/Library/Application Support/Tilia/`
 
-- `tilia.db`: your conversation with Tilia, your assignments and check-ins, notes it keeps about you, and (if you turn on text reading) the text messages from the threads you chose.
+- `tilia.db`: your conversation with Tilia, your assignments and check-ins, notes it keeps about you, and (if you turn on text reading) the text messages from the threads you chose. It also holds every worksheet, card and blot: your answers, the wording Tilia showed you, the card or the blot's seed, Tilia's sealed read of a card and its reply, short theme tags, and the weekly patterns Tilia writes about them.
+- `mirror.html`: the mirror, one page that shows every worksheet, card and blot you finished, both sides, and the patterns. Only your account can open it. It loads nothing from the internet (the page itself forbids it), so opening it sends nothing anywhere. Tilia rewrites it after each entry and on `/mirror`.
+- `.metadata_never_index`: an empty file that asks Spotlight not to index this folder, so what is in it stays out of Mac searches.
 - `profile.md`: what Tilia has learned about you, including your goal in your own words, and anything you brought over from your AI during setup.
 - `profile.prev.md`: the version of `profile.md` from before its last update, kept as a backup.
 - `config.toml`: your settings, such as which AI (ChatGPT or Claude) and model, quiet hours and which text threads are read.
@@ -20,7 +22,7 @@ Everything Tilia keeps is in one folder on your Mac:
 - `probe.json`: only for a few seconds during setup's texts step. It holds whether Messages can be read, a count of this week's messages, and the names and handles of the contacts that match the name you typed. Setup deletes it as soon as it has read it.
 - `probe_query.txt`: only for those same few seconds. It holds the name you typed, so the name never appears in the list of running programs. Setup deletes it too.
 
-One thing is outside that folder, and only during setup: `~/Tilia Import/`, the folder
+Two things are outside that folder. `~/Tilia Mirror.html` in your home folder is only an alias (a symbolic link) that points to `mirror.html`, so you can open the mirror from Finder; it holds nothing itself. The other is there only during setup: `~/Tilia Import/`, the folder
 setup opens if you choose "Bring what your AI already knows". You save your AI's answer
 (a file called tilia-profile.md) there, or leave it in `~/Downloads`, where setup looks
 for that exact name, saved after setup copied the question, and nowhere else. Setup only
@@ -35,7 +37,7 @@ so only your account can open them. The code refuses to run if that folder is
 inside the code folder, so your data cannot end up in the repo.
 
 Backups copy it too. If you use Time Machine or another backup, that backup
-holds a copy of this folder. Keep the backup encrypted, or exclude the folder.
+holds a copy of this folder, `mirror.html` included. Keep the backup encrypted, or exclude the folder.
 
 Your Telegram bot key is not in that folder. It is in your Mac's Keychain,
 under the name `tilia-telegram`. It is never written to a file or a log.
@@ -44,7 +46,9 @@ In Telegram, `/privacy` shows what is stored and how much. `/export` sends
 you one file with your conversation, your journal entries, your assignments
 and your profile. It leaves out the copied text messages, the check-ins,
 the signals Tilia worked out from your texts, and your corrections. Those are
-stored, but not in the export.
+stored, but not in the export. Worksheets, cards and blots are not in the export either
+(the short summary of your answers that became a message is, in the conversation); the
+mirror shows them.
 
 Tilia sometimes texts you first, when it has something real to ask about: at most 2 times a day by default, never during quiet hours (22:00 to 09:00 by default) and never in the middle of a conversation. In Telegram, send `/quieter` or `/more` to change how many, or `/pause` to stop them for a while; quiet hours are `quiet_start` and `quiet_end` (hours, 0 to 23) in `config.toml`. A check-in is stored in `tilia.db` like any other message.
 
@@ -98,10 +102,33 @@ to ask ChatGPT a question, and switches the rest off:
 Codex makes its own network calls (signing in, checking its model list) to
 OpenAI, separately from Tilia.
 
+**GitHub, for the worksheet page.** A worksheet, card or blot opens as a web page inside
+Telegram. The page is public code in this repo, served by GitHub Pages
+(`mydude-industries.github.io/tilia/`) to your phone; your Mac never fetches it.
+GitHub sees that a page was opened (your phone's IP address, the time, the worksheet
+type, the card id or the blot's seed, and the entry's random id, which says nothing about
+you), but never your answers or your wording. The
+address carries only those non-personal values. Tilia's wording for you (its version of
+a question, about your situation) goes in the address's fragment, the part after `#`,
+which browsers never send to a server. Your answers go back through Telegram, as a
+message from the page to Tilia, and never to GitHub. The tarot pictures are the public
+"Tilia Tarot" deck in this repo, the same files for everyone.
+
+**Telegram, for half-finished answers.** While a worksheet is open, its draft answers are
+saved in Telegram's CloudStorage for your bot and your account, so closing the page by
+mistake loses nothing. They are deleted when you send. A draft you never send stays in
+Telegram's CloudStorage for your bot until a later worksheet page clears it: opening any
+worksheet, card or blot deletes drafts older than 7 days. If you never open one again, it
+stays there. `/forget` and `scripts/uninstall.sh` can't reach Telegram's storage; only the
+page can. Telegram already holds every message you send Tilia. If CloudStorage doesn't
+work on your phone, the draft stays in the page's own storage on the phone instead, and
+the same 7-day clearing applies.
+
 **The person who set this up for you, including the author.** They cannot see
 your data. While Tilia is running, your messages, profile and texts go
 nowhere except `api.telegram.org` and your local AI command (`claude` or
-`codex`). There is no analytics and no telemetry. Tilia on one Mac never
+`codex`). (The worksheet page comes from GitHub to your phone, as above; your Mac
+still talks only to Telegram and your AI.) There is no analytics and no telemetry. Tilia on one Mac never
 connects to Tilia on another.
 
 Two other times Tilia's tools touch the internet. Neither sends your data:
@@ -184,14 +211,15 @@ It will not move you back to an older version.
 
 ## Deleting everything
 
-1. In Telegram, send `/forget all` and then type `FORGET` when asked. This deletes every row in Tilia's database, and the deleted data is overwritten and the database file is compacted, so it is not left behind in the file. It also clears `profile.md`, deletes its backup copy `profile.prev.md`, and deletes `crisis.log`. If Tilia reads your texts, it then asks "Keep reading your texts from now on? y/n". Answer `n` and it stops reading them and forgets which threads you chose. Answer `y` and it keeps reading them, so it copies those threads again from scratch, going back as far as setup said (12 months by default).
-2. Stop Tilia by running `scripts/uninstall.sh` in the Tilia folder. This only stops it and removes the small launch file that setup put in `~/Library/LaunchAgents/` (it holds paths, no personal data). It leaves your data alone. Then delete the data folder `~/Library/Application Support/Tilia/`. Deleting that folder is what removes your settings and logs, and, if you chose ChatGPT, the Codex login Tilia made (`codex-home/`).
-3. In Telegram, open @BotFather, send `/deletebot`, and pick your bot. Then delete the chat. Telegram's own copy is theirs to keep or remove, which Tilia cannot control.
+1. In Telegram, send `/forget all` and then type `FORGET` when asked. This deletes every row in Tilia's database, and the deleted data is overwritten and the database file is compacted, so it is not left behind in the file. It also clears `profile.md`, deletes its backup copy `profile.prev.md`, and deletes `crisis.log`. It also deletes your worksheets, cards and blots and rewrites `mirror.html`, so the mirror is empty. If Tilia reads your texts, it then asks "Keep reading your texts from now on? y/n". Answer `n` and it stops reading them and forgets which threads you chose. Answer `y` and it keeps reading them, so it copies those threads again from scratch, going back as far as setup said (12 months by default).
+2. Stop Tilia by running `scripts/uninstall.sh` in the Tilia folder. This only stops it, removes the small launch file that setup put in `~/Library/LaunchAgents/` (it holds paths, no personal data), and removes the `~/Tilia Mirror.html` alias if it points into the data folder. It leaves your data alone. Then delete the data folder `~/Library/Application Support/Tilia/`. Deleting that folder is what removes your settings and logs, and, if you chose ChatGPT, the Codex login Tilia made (`codex-home/`).
+3. In Telegram, open @BotFather, send `/deletebot`, and pick your bot. Then delete the chat. Telegram's own copy is theirs to keep or remove, which Tilia cannot control. That includes any unsent worksheet draft still in Telegram's CloudStorage (see "Who can see it"): Tilia's steps above can't reach it. To clear it first, open any worksheet, card or blot before deleting the bot; that deletes drafts older than 7 days.
 4. Remove the bot key from your Keychain:
    `security delete-generic-password -s tilia-telegram`
 
 Smaller steps: `/forget last` removes the last exchange. `/forget day`
-removes today's.
+removes today's. Each also deletes the worksheets, cards and blots that went with it
+and rewrites `mirror.html`.
 
 Anthropic or OpenAI keeps its own records under your account. Manage those in
 your Claude or ChatGPT account settings.

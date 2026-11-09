@@ -9,6 +9,12 @@ from dataclasses import dataclass
 from tilia import net
 
 LIMIT = 3500
+REMOVE_KEYBOARD = {"remove_keyboard": True}
+
+
+def webapp_markup(label: str, url: str) -> dict:
+    return {"keyboard": [[{"text": label, "web_app": {"url": url}}]],
+            "one_time_keyboard": True, "resize_keyboard": True}
 
 
 @dataclass(frozen=True)
@@ -16,10 +22,11 @@ class Update:
     update_id: int
     chat_id: int
     text: str | None
-    kind: str  # "text" | "unsupported"
+    kind: str  # "text" | "web_app_data" | "unsupported"
     chat_type: str | None = None  # "private" | "group" | "supergroup" | "channel"
     sender_name: str = ""  # Telegram first name of the sender, if given
     sender_username: str = ""  # without the @
+    web_app_data: str | None = None  # raw payload from a web_app button, kind "web_app_data"
 
 
 def split_reply(text: str, limit: int = LIMIT) -> list[str]:
@@ -92,9 +99,13 @@ class Telegram:
                         continue
                     text = m.get("text")
                     sender = m.get("from") or {}
+                    wad = (m.get("web_app_data") or {}).get("data")
+                    wad = wad if isinstance(wad, str) and text is None else None
                     out.append(Update(int(u["update_id"]), int(m["chat"]["id"]),
                                       text if text is not None else None,
-                                      "text" if text is not None else "unsupported",
+                                      "text" if text is not None else
+                                      "web_app_data" if wad is not None else "unsupported",
+                                      web_app_data=wad,
                                       chat_type=m["chat"].get("type"),
                                       sender_name=str(sender.get("first_name") or ""),
                                       sender_username=str(sender.get("username") or "")))
@@ -105,16 +116,23 @@ class Telegram:
             _log("updates", e)
             return []
 
-    def send(self, chat_id, text: str) -> bool:
+    def send(self, chat_id, text: str, markup: dict | None = None) -> bool:
         try:
-            for part in split_reply(text):
-                body = self._call("sendMessage", {"chat_id": chat_id, "text": part})
+            parts = split_reply(text)
+            for i, part in enumerate(parts):
+                params = {"chat_id": chat_id, "text": part}
+                if markup is not None and i == len(parts) - 1:
+                    params["reply_markup"] = json.dumps(markup)
+                body = self._call("sendMessage", params)
                 if not body.get("ok", True):
                     return False
             return True
         except Exception as e:
             _log("send", e)
             return False
+
+    def send_webapp_button(self, chat_id, text: str, label: str, url: str) -> bool:
+        return self.send(chat_id, text, markup=webapp_markup(label, url))
 
     def typing(self, chat_id) -> bool:
         """Show "typing…" in the chat for ~5 s. Never raises."""

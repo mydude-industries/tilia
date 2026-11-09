@@ -1,0 +1,96 @@
+{
+  "type": "urge_log",
+  "v": 1,
+  "title": "Look at an urge",
+  "pitch": "About 3 minutes. Looking closely at one urge, what set it off and what it promised, makes it easier to choose your move next time instead of being pushed into it.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "About 3 minutes. Looking closely at one urge, what set it off and what it promised, makes it easier to choose your move next time instead of being pushed into it.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number now lets you see whether looking at it changed anything.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "urge",
+      "kind": "text",
+      "short": "the urge",
+      "prompt": "What did you feel the urge to do?",
+      "why": "Naming it plainly turns a push into something you can look at.",
+      "personal": true,
+      "max_chars": 250
+    },
+    {
+      "id": "trigger",
+      "kind": "text",
+      "short": "what set it off",
+      "prompt": "What set it off? Where were you, and what had just happened?",
+      "why": "Knowing the trigger helps you see the next one coming.",
+      "personal": true,
+      "max_chars": 300
+    },
+    {
+      "id": "promise",
+      "kind": "chips",
+      "short": "what it promised",
+      "prompt": "What did the urge promise you?",
+      "why": "Seeing the need underneath lets you look for a better way to meet it.",
+      "personal": false,
+      "chips": [
+        "Relief",
+        "Being right",
+        "Getting through to them",
+        "Feeling close",
+        "Being left alone",
+        "Feeling in control",
+        "Something else"
+      ],
+      "multi": true
+    },
+    {
+      "id": "opposite",
+      "kind": "text",
+      "short": "the opposite move",
+      "prompt": "What would doing the opposite look like?",
+      "why": "Planning the opposite move gives you a real choice when the urge comes back.",
+      "personal": true,
+      "max_chars": 300
+    },
+    {
+      "id": "passed",
+      "kind": "chips",
+      "short": "did it pass",
+      "prompt": "Did the urge pass?",
+      "why": "Noticing that urges fade is what makes the next one easier to wait out.",
+      "personal": false,
+      "chips": [
+        "It passed",
+        "It eased",
+        "It's still here",
+        "I acted on it"
+      ],
+      "multi": false
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing with the start shows you what looking at it did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

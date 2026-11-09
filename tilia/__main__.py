@@ -1,4 +1,4 @@
-"""python -m tilia run | import-profile <file> | status | probe-texts --out <file> [--name-file <f>]"""
+"""python -m tilia run | import-profile <file> | status | mirror | probe-texts --out <file> [--name-file <f>]"""
 from __future__ import annotations
 
 import argparse
@@ -56,6 +56,18 @@ def _status() -> int:
     return 0
 
 
+def _mirror() -> int:
+    from . import mirror
+    from .store import Store, local_now
+
+    p = mirror.write(Store(paths.db_path()), local_now())
+    link = mirror.ensure_alias()
+    print(f"Wrote {p}")
+    print(f"Open it from ~/{mirror.ALIAS_NAME}" if link else
+          f"~/{mirror.ALIAS_NAME} is a file of yours, so I left it alone. The page is at {p}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m tilia")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -63,6 +75,7 @@ def main(argv=None) -> int:
     imp = sub.add_parser("import-profile", help="seed profile.md from a file outside the repo")
     imp.add_argument("file")
     sub.add_parser("status", help="show what's set up, without any message content")
+    sub.add_parser("mirror", help="write the mirror page and its alias in your home folder")
     pr = sub.add_parser("probe-texts", help="(setup uses this) can Tilia read Messages? "
                         "writes a count and matching chat names only, never message text")
     pr.add_argument("--out", required=True)
@@ -82,6 +95,8 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "run":
         return _run()
+    if a.cmd == "mirror":
+        return _mirror()
     if a.cmd == "import-profile":
         return _import_profile(a.file)
     return _status()

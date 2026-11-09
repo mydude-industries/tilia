@@ -2,6 +2,7 @@
 
 import os
 import stat
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -15,7 +16,40 @@ def data_dir() -> Path:
         raise RuntimeError(f"data folder {d} is inside the repo; refusing to run")
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(d, 0o700)
+    _never_index(d)
     return d
+
+
+_warned_index = False  # say it once per process, not on every data_dir()
+
+
+def _never_index(d: Path) -> None:
+    """An empty `.metadata_never_index` (0600) asks Spotlight to leave the folder out of its
+    index. Cheap when it is already right (one lstat). A symlink there is never followed:
+    Tilia says so on stderr (agent.log) and starts anyway, since the marker only asks."""
+    m = d / ".metadata_never_index"
+    try:
+        st = os.lstat(m)
+    except FileNotFoundError:
+        st = None
+    if st is not None and stat.S_ISREG(st.st_mode) and stat.S_IMODE(st.st_mode) == 0o600:
+        return
+    try:
+        fd = os.open(m, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as e:
+        global _warned_index
+        if _warned_index:
+            return
+        _warned_index = True
+        print(f"tilia: .metadata_never_index in the data folder is not a plain file "
+              f"({type(e).__name__}); Spotlight may index the folder. Delete it and check "
+              "who made it.", file=sys.stderr)
+        return
+    try:
+        if stat.S_IMODE(os.fstat(fd).st_mode) != 0o600:
+            os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
 
 
 def shown_data_dir() -> str:

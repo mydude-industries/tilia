@@ -1,0 +1,130 @@
+{
+  "type": "spread_cross",
+  "v": 1,
+  "title": "Five-card cross",
+  "pitch": "Five cards in a cross around what's on your mind. Read each one yourself, then see the read Tilia wrote before you looked. Not a prediction.",
+  "cards": [
+    {
+      "id": "pitch",
+      "kind": "pitch",
+      "short": "start",
+      "prompt": "Five cards in a cross around what's on your mind. Read each one yourself, then see the read Tilia wrote before you looked. Not a prediction.",
+      "why": "",
+      "personal": false
+    },
+    {
+      "id": "mood_start",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "A number before and after shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "card_1",
+      "kind": "reveal",
+      "short": "the heart of it",
+      "prompt": "The heart of it",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_1",
+      "kind": "text",
+      "short": "the heart of it",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 180
+    },
+    {
+      "id": "card_2",
+      "kind": "reveal",
+      "short": "what crosses it",
+      "prompt": "What crosses it",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_2",
+      "kind": "text",
+      "short": "what crosses it",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 180
+    },
+    {
+      "id": "card_3",
+      "kind": "reveal",
+      "short": "the root",
+      "prompt": "The root",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_3",
+      "kind": "text",
+      "short": "the root",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 180
+    },
+    {
+      "id": "card_4",
+      "kind": "reveal",
+      "short": "what's being asked of you",
+      "prompt": "What's being asked of you",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_4",
+      "kind": "text",
+      "short": "what's being asked of you",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 180
+    },
+    {
+      "id": "card_5",
+      "kind": "reveal",
+      "short": "where this is heading if nothing changes",
+      "prompt": "Where this is heading if nothing changes",
+      "why": "Your read comes first, before you hear anyone else's.",
+      "personal": false
+    },
+    {
+      "id": "says_5",
+      "kind": "text",
+      "short": "where this is heading if nothing changes",
+      "prompt": "What does this one say to you here?",
+      "why": "What a card says to you in this spot is the read that counts.",
+      "personal": false,
+      "max_chars": 180
+    },
+    {
+      "id": "together",
+      "kind": "text",
+      "short": "all of them together",
+      "prompt": "Looking at all of them together, what do you notice?",
+      "why": "The links you see between the cards often say the most.",
+      "personal": false,
+      "max_chars": 300
+    },
+    {
+      "id": "mood_end",
+      "kind": "mood",
+      "short": "feeling",
+      "prompt": "How do you feel right now?",
+      "why": "Comparing this with the start shows what a few quiet minutes did.",
+      "personal": false,
+      "min": 0,
+      "max": 10
+    }
+  ]
+}

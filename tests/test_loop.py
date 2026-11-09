@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tilia import coach, paths, power
+from tilia import coach, entries, paths, power, worksheets
 from tilia.config import Config
 from tilia.loop import Loop
 from tilia.store import Store
@@ -36,6 +36,7 @@ class FakeTG:
         self.sent: list[tuple[int, str]] = []
         self.offsets = []
         self.events: list[str] = []  # "typing" / "send", in order
+        self.marks: list = []  # the markup each send carried, in order
         self._id = 1000
 
     def _push(self, chat_id, text, kind):
@@ -48,12 +49,17 @@ class FakeTG:
     def photo(self, chat_id=PAIRED):
         self._push(chat_id, None, "unsupported")
 
+    def web_app(self, data, chat_id=PAIRED):
+        self._id += 1
+        self.queue.append(Update(self._id, chat_id, None, "web_app_data", web_app_data=data))
+
     def updates(self, offset):
         self.offsets.append(offset)
         return [u for u in self.queue if offset is None or u.update_id >= offset]
 
-    def send(self, chat_id, text):
+    def send(self, chat_id, text, markup=None):
         self.sent.append((chat_id, text))
+        self.marks.append(markup)
         self.events.append("send")
         return True
 
@@ -79,6 +85,7 @@ class FakeClaude:
         self.reply = reply
         self.calls: list[tuple[str, str]] = []
         self.fail = None  # None | "limit" | "limit_nohint" | "auth" | "missing" | "boom"
+        self.extra: dict = {}  # more fields for the coach's JSON answer
 
     def __call__(self, cmd, **kw):
         system = cmd[cmd.index("--system-prompt") + 1]
@@ -95,7 +102,7 @@ class FakeClaude:
         if system == SUMMARY_SYS:
             out = "# Notes\nfake profile"
         else:
-            out = json.dumps({"reply": self.reply, "state": "ok"})
+            out = json.dumps({"reply": self.reply, "state": "ok", **self.extra})
         return SimpleNamespace(stdout=json.dumps({"result": out, "is_error": False}),
                                stderr="", returncode=0)
 
@@ -127,6 +134,7 @@ def clock():
 
 
 def mkloop(store, tg, clock, claude, **kw):
+    kw.setdefault("cards", False)  # a weekly card would otherwise check in on an idle tick
     cfg = Config(chat_id=PAIRED, **kw)
     return Loop(cfg, store, tg, clock, claude, chatdb_opener=lambda: None)
 
@@ -980,3 +988,341 @@ def test_split_reply_sends_each_part_once_across_a_blip(store, clock, claude):
     loop.tick()
     assert tg.texts() == parts  # part one went once; the rest followed in order
     assert store.get_meta("outbox") is None
+
+
+def test_outbox_markup_rides_last_part(store, clock, claude):
+    from tilia import outbox
+
+    class MarkupTG(FakeTG):
+        def __init__(self):
+            super().__init__()
+            self.markups = []
+
+        def send(self, chat_id, text, markup=None):
+            self.markups.append((len(self.sent), markup))
+            return super().send(chat_id, text)
+
+    tg = MarkupTG()
+    loop = mkloop(store, tg, clock, claude)
+    text = " ".join(f"Sentence number {i} is here." for i in range(230))
+    mk = {"remove_keyboard": True}
+    outbox.enqueue(store, text, clock(), markup=mk)
+    loop.tick()
+    assert len(tg.sent) == 2
+    assert tg.markups == [(0, None), (1, mk)]
+    assert store.get_meta("outbox") is None
+
+
+# ---- worksheet answers come back -------------------------------------------------
+
+EXPIRED = "That one had expired, so I didn't keep your answers. Ask me for a fresh one any time."
+HAPPENED = "Riley went quiet at Sunday dinner"
+ANSWERS = [3, HAPPENED, "that I'd said something wrong", 70, "she smiled earlier",
+           ["They were stressed"], "she was tired", "it's probably not about you", 6]
+DAY = 24 * 3600
+
+
+@pytest.fixture
+def wstore(home, clock):
+    return Store(paths.db_path(), clock=clock)
+
+
+def payload(token, type="check_story", answers=ANSWERS):
+    return json.dumps({"v": 1, "type": type, "id": token, "answers": answers})
+
+
+def offered(store, clock, **kw):
+    o = worksheets.prepare(store, Config(chat_id=PAIRED), clock(), "check_story", **kw)
+    return store.entry_by_token(o.token)
+
+
+def round_trip(store, tg, clock, claude):
+    aid = store.add_assignment("worksheet", "Check the story: generic", None)
+    e = offered(store, clock, source="assignment", assignment_id=aid)
+    loop = mkloop(store, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    loop.tick()
+    clock.advance(10)  # past QUIET
+    loop.tick()
+    return loop, e
+
+
+def test_round_trip(wstore, tg, clock, claude):
+    claude.extra = {"themes": ["fear", "closeness"]}
+    loop, e = round_trip(wstore, tg, clock, claude)
+    [prompt] = claude.coach_calls()
+    assert "ENTRY (what they filled out)" in prompt and HAPPENED in prompt
+    user, reply = wstore.recent_turns(10)
+    assert user.role == "user" and user.text.startswith("[check the story] ")
+    assert HAPPENED in user.text
+    assert reply.role == "coach" and reply.text == claude.reply
+    done = wstore.get_entry(e.id)
+    assert done.status == "done" and done.reply == claude.reply
+    assert done.themes == ["fear", "closeness"] and set(done.themes) <= set(entries.THEMES)
+    assert (done.mood_before, done.mood_after, done.outcome) == (3, 6, 3)
+    assert done.turn_id == user.id
+    assert tg.sent == [(PAIRED, claude.reply)]
+    assert tg.marks[-1] == {"remove_keyboard": True}
+    assert wstore.get_meta("outbox") is None
+    assert wstore.open_assignments() == []
+    assert [a.status for a in wstore.all_assignments()] == ["done"]
+    clock.advance(60)
+    loop.tick()
+    assert len(claude.coach_calls()) == 1
+
+
+def test_unknown_id_ignored_and_counted(wstore, tg, clock, claude):
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload("A" * 12))
+    loop.tick()
+    clock.advance(60)
+    loop.tick()
+    assert tg.sent == [] and claude.calls == []
+    assert wstore.get_meta("ignored_payloads") == "1"
+
+
+def _oversized(token):
+    short = list(ANSWERS)
+    short[1] = ""
+    base = payload(token, answers=short)
+    short[1] = "x" * (4097 - len(base.encode()))
+    data = payload(token, answers=short)
+    assert len(data.encode()) == 4097
+    return data
+
+
+@pytest.mark.parametrize("make", [
+    _oversized,
+    lambda token: payload(token, type="plan_talk"),
+    lambda token: payload(token, answers=ANSWERS[:-1]),
+    lambda token: "{not json",
+])
+def test_oversized_or_malformed_ignored(wstore, tg, clock, claude, make):
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(make(e.token))
+    loop.tick()
+    clock.advance(60)
+    loop.tick()
+    assert tg.sent == [] and claude.calls == []
+    assert wstore.get_entry(e.id).status == "open"
+
+
+def test_expired_payload_gets_one_note(wstore, tg, clock, claude):
+    clock.advance(-8 * DAY)
+    e = offered(wstore, clock)
+    clock.advance(8 * DAY)
+    loop = mkloop(wstore, tg, clock, claude)
+    loop._slow(clock())
+    assert wstore.get_entry(e.id).status == "expired"
+    tg.web_app(payload(e.token))
+    loop.tick()
+    clock.advance(60)
+    loop.tick()
+    assert tg.sent == [(PAIRED, EXPIRED)]
+    assert claude.coach_calls() == []
+    assert wstore.get_entry(e.id).answers is None
+    assert wstore.get_meta("outbox") is None
+
+
+def test_stale_payload_on_wake_is_expired_before_slow_runs(wstore, tg, clock, claude):
+    # After a long sleep the first tick polls before _slow expires anything.
+    clock.advance(-8 * DAY)
+    e = offered(wstore, clock)
+    clock.advance(8 * DAY)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    loop.tick()
+    clock.advance(60)
+    loop.tick()
+    assert tg.sent == [(PAIRED, EXPIRED)]
+    assert claude.coach_calls() == []
+    assert wstore.get_entry(e.id).status == "expired"
+
+
+def test_double_submit_answered_once(wstore, tg, clock, claude):
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    tg.web_app(payload(e.token))
+    loop.tick()
+    clock.advance(10)
+    loop.tick()
+    clock.advance(60)
+    loop.tick()
+    assert len(claude.coach_calls()) == 1
+    assert tg.sent == [(PAIRED, claude.reply)]
+    assert wstore.get_entry(e.id).status == "done"
+
+
+def test_answer_retried_after_limit(wstore, tg, clock, claude):
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    claude.fail = "limit"
+    tg.web_app(payload(e.token))
+    loop.tick()
+    assert wstore.get_entry(e.id).status == "answered"
+    assert wstore.recent_turns(10) == []
+    assert tg.texts() == ["I'm at my usage limit (resets 3pm). I'll read everything when I'm back."]
+    claude.fail = None
+    clock.advance(60)
+    loop.tick()
+    assert len(claude.coach_calls()) == 1  # waits CLAUDE_RETRY
+    clock.advance(10 * 60)
+    loop.tick()
+    assert len(claude.coach_calls()) == 2
+    assert wstore.get_entry(e.id).status == "done"
+    assert tg.texts()[1:] == [claude.reply]
+    assert [t.role for t in wstore.recent_turns(10)] == ["user", "coach"]
+
+
+def test_crisis_answer(wstore, tg, clock, claude):
+    claude.reply = "I'm right here. Are you safe right now?"
+    claude.extra = {"state": "crisis", "worksheet": {"type": "check_story", "focus": None}}
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    loop.tick()
+    coach_turn = wstore.recent_turns(10)[-1]
+    assert coach_turn.role == "coach" and coach_turn.state == "crisis"
+    [(_, text)] = tg.sent
+    assert coach.LINE_988 in text
+    done = wstore.get_entry(e.id)
+    assert done.status == "done" and coach.LINE_988 in done.reply
+    assert len(wstore.entries()) == 1  # no new worksheet in a crisis
+    assert tg.marks[-1] == {"remove_keyboard": True}
+
+
+def test_payload_during_crisis_episode_is_kept_and_answered_as_crisis(wstore, tg, clock,
+                                                                      claude):
+    e = offered(wstore, clock)
+    wstore.set_meta("crisis_last", (clock() - timedelta(hours=2)).isoformat())
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    loop.tick()
+    done = wstore.get_entry(e.id)
+    assert done.answers is not None and done.status == "done"  # the answers are kept
+    [prompt] = claude.coach_calls()
+    assert "MODE: entry" in prompt and "CRISIS EPISODE: active" in prompt
+    assert "In a crisis, the crisis rules below win over all of this." in coach.system_prompt()
+    assert tg.marks[-1] == {"remove_keyboard": True}
+    assert len(wstore.entries()) == 1
+
+
+class Garbled(FakeClaude):
+    """Every coach (and state-check) answer is unreadable: not JSON and no usable prose."""
+
+    def __call__(self, cmd, **kw):
+        system = cmd[cmd.index("--system-prompt") + 1]
+        if system == SUMMARY_SYS:
+            return super().__call__(cmd, **kw)
+        self.calls.append((system, kw["input"]))
+        return SimpleNamespace(stdout=json.dumps({"result": "{oops", "is_error": False}),
+                               stderr="", returncode=0)
+
+
+def test_unparsable_entry_retried_then_given_up(wstore, tg, clock):
+    claude = Garbled()
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    loop.tick()
+    assert wstore.get_entry(e.id).status == "answered" and tg.sent == []
+    assert wstore.recent_turns(10) == []
+    n = len(claude.coach_calls())
+    clock.advance(30)
+    loop.tick()
+    assert len(claude.coach_calls()) == n  # waits before the next try
+    clock.advance(60)
+    loop.tick()
+    assert wstore.get_entry(e.id).status == "answered" and tg.sent == []
+    loop = mkloop(wstore, tg, clock, claude)  # a restart keeps the count
+    clock.advance(60)
+    loop.tick()
+    done = wstore.get_entry(e.id)
+    assert done.status == "done" and done.reply == worksheets.GAVE_UP
+    assert tg.texts() == [worksheets.GAVE_UP]
+    assert coach.RETRY_LINE not in " ".join(t.text for t in wstore.recent_turns(10))
+    assert tg.marks[-1] == {"remove_keyboard": True}
+    assert wstore.get_meta("entry_tries") is None
+    clock.advance(600)
+    loop.tick()
+    assert tg.texts() == [worksheets.GAVE_UP]  # given up once, never retried again
+
+
+def test_stuck_entry_never_blocks_other_entries_or_texts(wstore, tg, clock, claude,
+                                                         monkeypatch):
+    stuck, fine = offered(wstore, clock), offered(wstore, clock)
+    real = worksheets.answer
+
+    def flaky(store, cfg, now, entry, run=None):
+        if entry.id == stuck.id:
+            raise RuntimeError("deterministic")
+        return real(store, cfg, now, entry, run=run)
+    monkeypatch.setattr(worksheets, "answer", flaky)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(stuck.token))
+    tg.web_app(payload(fine.token))
+    tg.text("are you there?")
+    loop.tick()
+    assert wstore.get_entry(stuck.id).status == "answered"
+    clock.advance(10)  # past QUIET, well inside the stuck entry's wait
+    loop.tick()
+    assert wstore.get_entry(fine.id).status == "done"
+    assert pending(wstore) == 0  # the text was answered too
+    assert len(tg.texts()) == 2
+    for _ in range(3):
+        clock.advance(61)
+        loop.tick()
+    assert wstore.get_entry(stuck.id).status == "done"
+    assert wstore.get_entry(stuck.id).reply == worksheets.GAVE_UP
+    assert tg.texts()[-1] == worksheets.GAVE_UP
+    assert "Something's off on my side" not in " ".join(tg.texts())
+
+
+def test_intent_links_entry(wstore, tg, clock, claude):
+    claude.extra = {"remember": "intent: try one line before going quiet, Thursday"}
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.web_app(payload(e.token))
+    loop.tick()
+    [sig] = wstore.signals_since(clock() - timedelta(days=1))
+    assert sig["kind"] == "intent" and sig["detail"] == "try one line before going quiet, Thursday"
+    assert wstore.get_entry(e.id).followup_signal == sig["id"]
+
+
+def test_backlog_payload_and_texts(wstore, tg, clock, claude):
+    e = offered(wstore, clock)
+    loop = mkloop(wstore, tg, clock, claude)
+    tg.text("hey")
+    tg.web_app(payload(e.token))
+    tg.text("also this")
+    loop.tick()
+    clock.advance(10)
+    loop.tick()
+    clock.advance(60)
+    loop.tick()
+    calls = claude.coach_calls()
+    assert len(calls) == 2
+    [entry_call] = [c for c in calls if "ENTRY (what they filled out)" in c]
+    [text_call] = [c for c in calls if c is not entry_call]
+    assert "<new_messages>\nhey\nalso this\n</new_messages>" in text_call
+    entry_new = entry_call.split("<new_messages>")[1]
+    assert "\nhey\n" not in entry_new and "also this" not in entry_new
+    assert tg.sent == [(PAIRED, claude.reply)] * 2
+    assert wstore.get_meta("outbox") is None and pending(wstore) == 0
+    assert wstore.get_entry(e.id).status == "done"
+
+
+def test_forget_last_removes_answered_entry(wstore, tg, clock, claude):
+    loop, _ = round_trip(wstore, tg, clock, claude)
+    tg.text("/forget last")
+    loop.tick()
+    assert wstore.entries() == []
+    assert wstore.recent_turns(10) == []
+
+
+def test_entry_reply_regenerates_mirror(wstore, tg, clock, claude):
+    from tilia import mirror
+    round_trip(wstore, tg, clock, claude)
+    assert HAPPENED in mirror.path().read_text(encoding="utf-8")

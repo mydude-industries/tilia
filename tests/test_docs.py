@@ -131,7 +131,48 @@ def test_docs_say_tilia_texts_first_and_how_to_change_it():
             assert needle in flat
 
 
-def test_version_is_0_1_4():
+def test_version_is_0_2_0():
     import tomllib
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert meta["project"]["version"] == "0.1.4"
+    assert meta["project"]["version"] == "0.2.0"
+
+
+# ---- worksheets, cards, blots and the mirror ------------------------------------------
+
+def test_privacy_lists_the_mirror_files():
+    stores = PRIVACY.split("## What it stores and where", 1)[1].split("\n## ", 1)[0]
+    assert "`mirror.html`" in stores and "`~/Tilia Mirror.html`" in stores
+    assert "`.metadata_never_index`" in stores and "Spotlight" in stores
+    assert "Time Machine" in stores and "mirror.html" in stores.split("Time Machine", 1)[1][:400]
+
+
+def test_privacy_says_what_github_telegram_and_the_fragment_see():
+    assert "GitHub sees that a page was opened" in FLAT_P
+    assert "never your answers or your wording" in FLAT_P
+    assert "CloudStorage" in FLAT_P and "fragment" in FLAT_P
+    assert "Tilia Tarot" in FLAT_P  # the public deck
+
+
+def test_privacy_says_where_an_unsent_draft_stays():
+    who = " ".join(PRIVACY.split("## Who can see it", 1)[1].split("\n## ", 1)[0].split())
+    assert ("A draft you never send stays in Telegram's CloudStorage for your bot until a "
+            "later worksheet page clears it: opening any worksheet, card or blot deletes "
+            "drafts older than 7 days.") in who
+    assert "`/forget` and `scripts/uninstall.sh` can't reach Telegram's storage" in who
+    assert "the entry's random id" in who.split("GitHub sees that a page was opened", 1)[1][:300]
+    delete = " ".join(PRIVACY.split("## Deleting everything", 1)[1].split("\n## ", 1)[0].split())
+    assert "unsent worksheet draft still in Telegram's CloudStorage" in delete
+
+
+def test_privacy_forget_and_export_cover_entries_and_the_mirror():
+    delete = " ".join(PRIVACY.split("## Deleting everything", 1)[1].split("\n## ", 1)[0].split())
+    assert "also deletes your worksheets, cards and blots and rewrites `mirror.html`" in delete
+    assert "`~/Tilia Mirror.html`" in delete  # uninstall removes the alias
+    assert "not in the export" in FLAT_P and "the mirror shows them" in FLAT_P
+
+
+def test_readme_names_the_new_commands_and_the_page():
+    for needle in ("/mirror", "/worksheets off", "/cards off", "## Worksheets, cards and blots"):
+        assert needle in README
+    assert ("The page is served by GitHub to your phone; your Mac still talks only to "
+            "Telegram and your AI.") in FLAT_R
