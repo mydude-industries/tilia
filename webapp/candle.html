@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Tilia · candle</title>
+<link rel="icon" href="data:,">
+<style>
+  /* A candle in a dark room, whatever the theme: the flame is the only light. */
+  :root {
+    --room: #141416; --ink: #ece7da; --soft: #c9c3b4; --muted: #8c877b; --gold: #b48c3c; --rule: #2e2e33;
+    --serif: "New York", ui-serif, "Iowan Old Style", "Charter", "Noto Serif", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+    --bottom: var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--room); color: var(--ink); font-family: var(--serif); }
+  body { padding: calc(var(--top) + 24px) 20px calc(var(--bottom) + 24px); overflow-x: hidden; }
+  main { max-width: 420px; margin: 0 auto; position: relative; min-height: 70vh; }
+  .glow { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.4s;
+    background: radial-gradient(ellipse 80% 50% at 50% 42%, rgba(255,176,70,.22), rgba(255,140,40,.06) 45%, transparent 70%); }
+  .lit .glow { opacity: 1; }
+  .kicker { font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin: 0 0 8px; }
+  h1 { font-weight: 500; font-size: 24px; line-height: 1.2; margin: 0 0 8px; }
+  .lead { color: var(--soft); font-size: 16px; line-height: 1.45; margin: 0 0 8px; }
+  .candle { position: relative; width: 60px; height: 190px; margin: 36px auto 18px; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+  .wax { position: absolute; left: 10px; right: 10px; bottom: 0; height: 120px; border-radius: 7px 7px 5px 5px;
+    background: linear-gradient(90deg, #e9dcc2, #f7efdc 45%, #d9cbaf); }
+  .wax:before { content: ""; position: absolute; left: 0; right: 0; top: -5px; height: 11px; border-radius: 50%; background: #f1e6cf; }
+  .drip { position: absolute; width: 7px; height: 22px; left: 12px; top: 2px; border-radius: 3px 3px 6px 6px; background: #f1e6cf; }
+  .wick { position: absolute; left: 50%; bottom: 118px; width: 2px; height: 14px; margin-left: -1px; background: #2a2521; border-radius: 1px; }
+  .flame { position: absolute; left: 50%; bottom: 128px; width: 20px; height: 48px; margin-left: -10px; opacity: 0;
+    border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%; transform-origin: 50% 100%;
+    background: radial-gradient(ellipse at 50% 85%, #fff8e0 0 12%, #ffd36a 30%, #ff9a2e 62%, rgba(255,120,30,0) 78%);
+    box-shadow: 0 0 20px 7px rgba(255,170,60,.45), 0 0 70px 24px rgba(255,140,40,.18);
+    transition: transform .08s linear, opacity .5s; }
+  .flame:after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 7px; height: 17px; margin-left: -3.5px;
+    border-radius: 50% 50% 40% 40% / 60% 60% 40% 40%; background: rgba(70,110,255,.45); filter: blur(1px); }
+  .lit .flame { opacity: 1; }
+  .smoke { position: absolute; left: 50%; bottom: 132px; width: 3px; height: 0; margin-left: -1px; opacity: 0; border-radius: 50%;
+    background: linear-gradient(to top, rgba(200,200,200,.5), transparent); }
+  .out .smoke { animation: rise 2.6s ease-out forwards; }
+  @keyframes rise { from { height: 0; opacity: .8; } to { height: 90px; opacity: 0; transform: translateX(10px) rotate(6deg); } }
+  .say { text-align: center; font-size: 19px; line-height: 1.35; min-height: 52px; margin: 6px 0; }
+  .quiet { text-align: center; color: var(--muted); font-size: 13px; font-style: italic; margin: 4px 0 0; min-height: 18px; }
+  .meter { height: 3px; margin: 16px 40px 8px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: #55524a; transition: width .08s linear; }
+  .meter i.blow { background: var(--gold); }
+  .tap { display: block; width: 100%; margin: 10px 0 0; padding: 14px; border: 1px solid var(--rule); border-radius: 12px;
+    background: transparent; color: var(--ink); font: 16px/1.3 var(--sans); text-align: center; cursor: pointer; }
+  .tap.go { background: var(--gold); border-color: var(--gold); color: #1d1d1b; font-weight: 600; }
+  [hidden] { display: none !important; }
+  .note { color: var(--muted); font: 12px/1.4 var(--sans); text-align: center; margin: 22px 0 0; }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<main id="main">
+  <p class="kicker">A small ritual</p>
+  <h1 id="title">Before the hard thing</h1>
+  <p class="lead" id="lead">Light it, take one breath, and go. Come back and blow it out when you're done.</p>
+
+  <div class="candle" id="candle" role="button" aria-label="The candle">
+    <div class="flame" id="flame"></div>
+    <div class="smoke"></div>
+    <div class="wick"></div>
+    <div class="wax"><div class="drip"></div></div>
+  </div>
+
+  <p class="say" id="say">Tap the wick to light it.</p>
+  <p class="quiet" id="hint"></p>
+  <div class="meter" id="meter" hidden><i id="bar"></i></div>
+
+  <button type="button" class="tap go" id="mic" hidden>Blow it out with the microphone</button>
+  <button type="button" class="tap" id="again" hidden>Light it again</button>
+  <button type="button" class="tap go" id="done" hidden>Done</button>
+
+  <p class="note">The microphone is only used to notice a breath. Nothing is recorded or sent anywhere.</p>
+</main>
+<script src="vendor/telegram-web-app.js"></script>
+<script src="candle.js"></script>
+</body>
+</html>
