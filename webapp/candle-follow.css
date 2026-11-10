@@ -1,0 +1,112 @@
+/* The follow-up stage (the taps after the candle is out). Owned by the follow module.
+   Self-contained: every rule hangs off .fu / .fu-* so changes to .tap or .follow in
+   candle.css can't reach it. Same visual language as the page: dark room, ink text,
+   12px radius, system sans, gold only where something is warm. */
+
+#follow.fu {
+  /* the page fades .follow as a block; this stage brings its answers in one by one */
+  opacity: 1; transition: none;
+  --fu-ink: #ece7da; --fu-soft: #c9c3b4; --fu-muted: #8c877b; --fu-rule: #2e2e33;
+  --fu-gold: 180, 140, 60;
+  --fu-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fu-ease: cubic-bezier(.2, .7, .25, 1);
+  padding-top: 2px;
+}
+.fu-list { display: flex; flex-direction: column; }
+
+/* ---- the four answers ---- */
+.fu-tap {
+  display: block; width: 100%; margin: 10px 0 0; padding: 14px 16px;
+  border: 1px solid var(--fu-rule); border-radius: 12px;
+  background: rgba(20, 20, 22, .55); color: var(--fu-ink);
+  font: 16px/1.3 var(--fu-sans); letter-spacing: .005em; text-align: center;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; -webkit-appearance: none; appearance: none;
+  transition: border-color .25s, background-color .25s;
+}
+.fu-tap:first-child { margin-top: 0; }
+@media (hover: hover) {
+  .fu-tap:not(:disabled):hover { border-color: #46454a; background: rgba(236, 231, 218, .03); }
+}
+.fu-tap:not(:disabled):active { background: rgba(236, 231, 218, .06); border-color: #4a4840; }
+.fu-tap:focus { outline: none; }
+.fu-tap:focus-visible, .fu-own:focus-visible, .fu-send:focus-visible {
+  outline: 1px solid rgba(var(--fu-gold), .8); outline-offset: 3px;
+}
+
+/* ---- the quieter fifth: say it yourself ---- */
+.fu-own {
+  display: block; margin: 12px auto 0; padding: 10px 14px; border: 0; background: none;
+  color: var(--fu-muted); font: 14px/1.3 var(--fu-sans); letter-spacing: .01em; cursor: pointer;
+  text-decoration: underline; text-decoration-color: rgba(140, 135, 123, .35);
+  text-decoration-thickness: 1px; text-underline-offset: 5px;
+  -webkit-tap-highlight-color: transparent; transition: color .25s, text-decoration-color .25s;
+}
+.fu-own:not(:disabled):active { color: var(--fu-soft); }
+@media (hover: hover) {
+  .fu-own:not(:disabled):hover { color: var(--fu-soft); text-decoration-color: rgba(201, 195, 180, .5); }
+}
+
+.fu-form {
+  display: flex; align-items: center; margin: 10px 0 0; padding: 0 6px 0 0;
+  border: 1px solid var(--fu-rule); border-radius: 12px; background: rgba(20, 20, 22, .55);
+  transition: border-color .3s, box-shadow .3s;
+}
+.fu-form[hidden] { display: none !important; }
+.fu-form:focus-within { border-color: rgba(var(--fu-gold), .55); box-shadow: 0 0 18px rgba(var(--fu-gold), .08); }
+.fu-field {
+  flex: 1; min-width: 0; margin: 0; padding: 14px 4px 14px 16px; border: 0; background: transparent;
+  color: var(--fu-ink); font: 16px/1.3 var(--fu-sans); /* 16px keeps iOS from zooming */
+  caret-color: rgb(var(--fu-gold)); outline: none; -webkit-appearance: none; appearance: none; border-radius: 12px;
+}
+.fu-field::placeholder { color: var(--fu-muted); opacity: .8; font-style: italic; }
+.fu-send {
+  flex: none; margin: 0; padding: 8px 12px; border: 0; border-radius: 8px; background: none;
+  color: rgb(var(--fu-gold)); font: 600 14px/1 var(--fu-sans); letter-spacing: .02em; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: opacity .3s, background-color .2s;
+}
+.fu-send:not(:disabled):active { background: rgba(var(--fu-gold), .12); }
+.fu-opening { animation: fu-open .42s var(--fu-ease) both; }
+@keyframes fu-open { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---- entrance: the answers rise in one after another ---- */
+.fu .fu-list > * {
+  opacity: 0; transform: translateY(12px);
+  transition: opacity .64s var(--fu-ease), transform .64s var(--fu-ease),
+              border-color .25s, background-color .25s, color .25s;
+  transition-delay: calc(var(--i, 0) * 80ms), calc(var(--i, 0) * 80ms), 0s, 0s, 0s;
+}
+.fu.fu-in .fu-list > * { opacity: 1; transform: none; }
+
+/* ---- a pick: the chosen one warms, the rest recede, then fold away ---- */
+.fu.fu-picked .fu-list > * {
+  transition: opacity .45s ease-out, transform .45s ease-out, max-height .62s var(--fu-ease),
+              margin .62s var(--fu-ease), padding .62s var(--fu-ease), border-color .45s;
+  transition-delay: 0s;
+}
+.fu.fu-picked .fu-away { opacity: .22; transform: scale(.965); cursor: default; }
+.fu.fu-picked .fu-fold {
+  opacity: 0; overflow: hidden; margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0;
+  border-color: transparent; border-width: 0; transform: scale(.94);
+}
+.fu-tap.fu-chosen, .fu-form.fu-chosen {
+  cursor: default; color: var(--fu-ink);
+  animation: fu-warm 1.5s ease-out forwards;
+}
+.fu-form.fu-chosen .fu-send { display: none; }
+.fu-form.fu-chosen .fu-field { text-align: center; padding-left: 16px; padding-right: 16px; }
+.fu-form.fu-chosen { padding-right: 0; }
+@keyframes fu-warm {
+  0%   { border-color: var(--fu-rule); background-color: rgba(20, 20, 22, .55); box-shadow: 0 0 0 0 rgba(var(--fu-gold), 0); }
+  22%  { border-color: rgba(var(--fu-gold), 1); background-color: rgba(var(--fu-gold), .2);
+         box-shadow: 0 0 0 1px rgba(var(--fu-gold), .45), 0 0 26px 2px rgba(var(--fu-gold), .32); }
+  100% { border-color: rgba(var(--fu-gold), .5); background-color: rgba(var(--fu-gold), .1);
+         box-shadow: 0 0 0 0 rgba(var(--fu-gold), 0), 0 0 22px 0 rgba(var(--fu-gold), .06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fu .fu-list > *, .fu.fu-picked .fu-list > * { transform: none !important; transition: opacity .3s !important; }
+  .fu-opening { animation: none; }
+  .fu-tap.fu-chosen, .fu-form.fu-chosen {
+    animation: none; border-color: rgba(var(--fu-gold), .5); background-color: rgba(var(--fu-gold), .1);
+  }
+}
