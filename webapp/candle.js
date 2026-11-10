@@ -30,43 +30,114 @@
 
   function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 
-  // The follow-up condenses out of the smoke: each letter arrives a beat after the last.
-  function condense(lines) {
-    after.innerHTML = "";
-    var delay = 1300, step = 38;
-    lines.forEach(function (ln) {
-      var p = document.createElement("span");
-      p.className = "line" + (ln.small ? " small" : "");
-      Array.prototype.forEach.call(ln.text, function (c) {
-        var ch = document.createElement("span");
-        ch.className = "ch"; ch.textContent = c;
-        ch.style.animationDelay = delay + "ms";
-        delay += step;
-        p.appendChild(ch);
-      });
-      after.appendChild(p);
-      delay += 220;
-    });
-    after.classList.add("on");
-    return delay;
+  // The follow-up is drawn by the smoke itself. One set of particles leaves the wick as
+  // smoke, drifts, then is drawn into the shapes of the letters, glowing as it gathers;
+  // the crisp words fade up underneath while the particles dissolve.
+  var fx = document.getElementById("fx"), gfx = fx.getContext("2d"), anim = null;
+  var SERIF = '500 30px "New York", ui-serif, "Iowan Old Style", Charter, Georgia, serif';
+  var SANS = '600 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+  function sprite(color) {
+    var c = document.createElement("canvas"); c.width = c.height = 32;
+    var g = c.getContext("2d"), r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    r.addColorStop(0, color.replace("A", "0.9")); r.addColorStop(0.5, color.replace("A", "0.28")); r.addColorStop(1, color.replace("A", "0"));
+    g.fillStyle = r; g.fillRect(0, 0, 32, 32);
+    return c;
+  }
+  var SMOKE = sprite("rgba(210,205,195,A)"), EMBER = sprite("rgba(255,190,90,A)");
+
+  function textPoints(w, h, lines, dpr) {
+    // where the words are: sample the filled glyphs on an offscreen canvas
+    var c = document.createElement("canvas"); c.width = w; c.height = h;
+    var g = c.getContext("2d"); g.scale(dpr, dpr); g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+    lines.forEach(function (ln) { g.font = ln.font; try { g.letterSpacing = ln.spacing || "0px"; } catch (e) { /* older client */ } g.fillText(ln.text, w / dpr / 2, ln.y); });
+    var d = g.getImageData(0, 0, w, h).data, pts = [], step = Math.max(2, Math.round(2.2 * dpr));
+    for (var y = 0; y < h; y += step) for (var x = 0; x < w; x += step) if (d[(y * w + x) * 4 + 3] > 110) pts.push([x / dpr, y / dpr]);
+    for (var i = pts.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
+    return pts;
   }
 
-  function smoke() {
-    for (var i = 0; i < 7; i++) {
-      var w = document.createElement("div");
-      w.className = "wisp";
-      w.style.setProperty("--sway", (Math.random() * 44 - 22) + "px");
-      w.style.animationDelay = (i * 160) + "ms";
-      w.style.animationDuration = (3000 + Math.random() * 1200) + "ms";
-      candle.appendChild(w);
+  function ease(u) { return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; }
+
+  function morph(lines, onReady) {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var mr = main.getBoundingClientRect(), cr = candle.getBoundingClientRect();
+    var W = Math.round(mr.width), wickX = cr.left + cr.width / 2 - mr.left, wickY = cr.bottom - 118 - mr.top;
+    var H = Math.max(160, Math.round(wickY));
+    fx.width = W * dpr; fx.height = H * dpr; fx.style.height = H + "px";
+    var ty = Math.max(70, H * 0.56);
+    var L = [{ text: lines[0], font: SANS, y: ty - 34, spacing: "2px" }, { text: lines[1], font: SERIF, y: ty }];
+    var pts = textPoints(fx.width, fx.height, L, dpr);
+    var N = Math.min(1100, Math.max(700, pts.length));
+    var P = [];
+    for (var i = 0; i < N; i++) {
+      var tgt = i < pts.length ? pts[i] : null;
+      P.push({
+        x: wickX + (Math.random() - 0.5) * 10, y: wickY + 2,
+        vy: -(34 + Math.random() * 50), sway: (Math.random() - 0.5) * 3.4, ph: Math.random() * 6.28,
+        born: Math.random() * 1500, size: 4 + Math.random() * 10, grow: 14 + Math.random() * 16,
+        tx: tgt && tgt[0], ty: tgt && tgt[1], start: 1500 + Math.random() * 900, dur: 1400 + Math.random() * 600,
+        fx: 0, fy: 0, jitter: Math.random() * 6.28
+      });
     }
+    var t0 = null;
+    function frame(now) {
+      if (t0 === null) t0 = now;
+      var t = now - t0, dt = 16;
+      gfx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      gfx.clearRect(0, 0, W, H);
+      var textA = Math.max(0, Math.min(1, (t - 3500) / 1000));          // the words fade up
+      var done = true;
+      for (var i = 0; i < P.length; i++) {
+        var p = P[i], age = t - p.born;
+        if (age < 0) { done = false; continue; }
+        // free smoke: rises, sways, widens, thins
+        p.fy = p.y + p.vy * age / 1000;
+        p.fx = p.x + Math.sin(age / 900 + p.ph) * 14 * p.sway + Math.sin(age / 2300 + p.ph) * 9 + p.sway * age / 90;
+        var sz = p.size + p.grow * age / 1000;
+        var smokeA = Math.max(0, Math.min(0.2, age / 500) - age / 5200);
+        var x = p.fx, y = p.fy, a = smokeA, gold = 0;
+        if (p.tx !== null) {
+          var u = Math.max(0, Math.min(1, (t - p.start) / p.dur)), e = ease(u);
+          if (u > 0) {
+            var jx = Math.sin(t / 260 + p.jitter) * 0.8 * (1 - textA), jy = Math.cos(t / 310 + p.jitter) * 0.8 * (1 - textA);
+            x = p.fx + (p.tx + jx - p.fx) * e; y = p.fy + (p.ty + jy - p.fy) * e;
+            sz = sz + (3.2 - sz) * e;
+            a = smokeA + (0.85 - smokeA) * e;
+            gold = e;
+            a *= 1 - textA;                                               // dissolve as the words arrive
+          }
+          if (u < 1 || textA < 1) done = false;
+        } else if (smokeA > 0.01) { done = false; }
+        if (a <= 0.005) continue;
+        var half = sz / 2;
+        if (gold < 1) { gfx.globalAlpha = a * (1 - gold); gfx.drawImage(SMOKE, x - half, y - half, sz, sz); }
+        if (gold > 0) { gfx.globalAlpha = a * gold; gfx.drawImage(EMBER, x - half * 1.6, y - half * 1.6, sz * 1.6, sz * 1.6); }
+      }
+      if (textA > 0) {
+        gfx.globalAlpha = textA; gfx.textAlign = "center"; gfx.textBaseline = "middle";
+        gfx.shadowColor = "rgba(255,170,60," + (0.9 - 0.6 * textA) + ")"; gfx.shadowBlur = 22 - 14 * textA;
+        L.forEach(function (ln, k) {
+          gfx.font = ln.font; try { gfx.letterSpacing = ln.spacing || "0px"; } catch (e) { /* older client */ }
+          gfx.fillStyle = k === 0 ? "#8c877b" : "#ece7da";
+          gfx.fillText(ln.text, W / 2, ln.y);
+        });
+        gfx.shadowBlur = 0;
+      }
+      gfx.globalAlpha = 1;
+      if (t > 3800 && onReady) { onReady(); onReady = null; }
+      if (!done || textA < 1) anim = requestAnimationFrame(frame);
+      else anim = null;
+    }
+    anim = requestAnimationFrame(frame);
   }
 
   function clearOut() {
     timers.forEach(clearTimeout); timers = [];
-    after.classList.remove("on"); after.innerHTML = "";
+    if (anim) { cancelAnimationFrame(anim); anim = null; }
+    gfx.setTransform(1, 0, 0, 1, 0, 0); gfx.clearRect(0, 0, fx.width, fx.height);
+    after.textContent = "";
     follow.classList.remove("on"); show(follow, false);
-    Array.prototype.forEach.call(candle.querySelectorAll(".wisp"), function (w) { w.remove(); });
   }
 
   function light() {
@@ -87,9 +158,8 @@
     hint.textContent = how === "mic" ? "Blown out." : "Tapped out.";
     show(micBtn, false); show(meter, false); show(again, false); show(done, false);
     try { tg && tg.HapticFeedback.notificationOccurred("success"); } catch (e) { /* no haptics */ }
-    smoke();
-    var ready = condense([{ text: "It's out.", small: true }, { text: "How did it go?" }]);
-    later(function () { show(follow, true); follow.classList.add("on"); }, ready + 300);
+    after.textContent = "It's out. How did it go?";
+    morph(["IT'S OUT.", "How did it go?"], function () { show(follow, true); follow.classList.add("on"); });
   }
 
   Array.prototype.forEach.call(follow.querySelectorAll("[data-pick]"), function (b) {

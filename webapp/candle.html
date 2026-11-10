@@ -45,34 +45,17 @@
     background: linear-gradient(to top, rgba(200,200,200,.5), transparent); }
   .out .smoke { animation: rise 2.6s ease-out forwards; }
   @keyframes rise { from { height: 0; opacity: .8; } to { height: 90px; opacity: 0; transform: translateX(10px) rotate(6deg); } }
-  /* smoke: several wisps rise from the wick, sway, widen and thin out */
-  .wisp { position: absolute; left: 50%; bottom: 132px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(215,210,200,.55), rgba(215,210,200,0) 70%); filter: blur(2px);
-    opacity: 0; pointer-events: none; animation: wisp 3.4s ease-out forwards; }
-  @keyframes wisp {
-    0%   { opacity: 0;  transform: translate(0, 0) scale(.6); }
-    12%  { opacity: .9; }
-    60%  { opacity: .45; transform: translate(var(--sway), -150px) scale(2.4); filter: blur(5px); }
-    100% { opacity: 0;  transform: translate(calc(var(--sway) * 1.6), -260px) scale(4); filter: blur(10px); }
-  }
-  /* the header gives way to the follow-up */
+  /* the header gives way to the follow-up, which the smoke draws on the canvas */
   .head { transition: opacity .9s; }
   .out .head { opacity: 0; pointer-events: none; }
-  .after { position: absolute; left: 0; right: 0; top: 70px; text-align: center; pointer-events: none; }
-  .after .line { display: block; font-size: 30px; line-height: 1.2; margin: 0; }
-  .after .line.small { font-size: 16px; color: var(--muted); font-family: var(--sans); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 10px; }
-  .after .ch { display: inline-block; white-space: pre; opacity: 0; }
-  .after.on .ch { animation: condense 1.6s cubic-bezier(.2,.7,.2,1) forwards; }
-  @keyframes condense {
-    0%   { opacity: 0;  filter: blur(9px); transform: translateY(14px) scale(1.06); color: #9b9890; text-shadow: 0 0 0 rgba(255,170,60,0); }
-    45%  { opacity: .9; filter: blur(1px); transform: translateY(2px) scale(1.01); color: #d9c9a4; text-shadow: 0 0 22px rgba(255,170,60,.95), 0 0 6px rgba(255,220,140,.9); }
-    100% { opacity: 1;  filter: blur(0); transform: none; color: var(--ink); text-shadow: 0 0 8px rgba(255,170,60,.28); }
-  }
+  #fx { position: absolute; left: 0; top: 0; width: 100%; pointer-events: none; display: none; }
+  .out #fx { display: block; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .follow { opacity: 0; transition: opacity .8s; }
+  .follow.on { opacity: 1; }
   .out .candle { transform: translateY(16px) scale(.92); opacity: .75; }
   .out .quiet { display: none; }
   .candle { transition: transform 1.4s ease, opacity 1.4s ease; }
-  .follow { opacity: 0; transition: opacity .8s; }
-  .follow.on { opacity: 1; }
   .say { text-align: center; font-size: 19px; line-height: 1.35; min-height: 52px; margin: 6px 0; }
   .quiet { text-align: center; color: var(--soft); font: 14px/1.5 ui-monospace, Menlo, monospace; margin: 8px 0 0; min-height: 18px; white-space: pre-line; }
   .meter { height: 3px; margin: 16px 40px 8px; border-radius: 2px; background: var(--rule); overflow: hidden; }
@@ -93,11 +76,11 @@
     <h1 id="title">Before the hard thing</h1>
     <p class="lead" id="lead">Light it, take one breath, and go. Come back and blow it out when you're done.</p>
   </div>
-  <div class="after" id="after" aria-live="polite"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <p class="sr" id="after" aria-live="polite"></p>
 
   <div class="candle" id="candle" role="button" aria-label="The candle">
     <div class="flame" id="flame"></div>
-    <div class="smoke"></div>
     <div class="wick"></div>
     <div class="wax"><div class="drip"></div></div>
   </div>
@@ -119,6 +102,6 @@
   <p class="note">The microphone is only used to notice a breath. Nothing is recorded or sent anywhere.</p>
 </main>
 <script src="vendor/telegram-web-app.js"></script>
-<script src="candle.js?v=6"></script>
+<script src="candle.js?v=7"></script>
 </body>
 </html>
