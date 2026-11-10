@@ -1,7 +1,7 @@
 // A candle you light before a hard thing and blow out after. The microphone is read as a
 // volume number a few times a second and nothing else; audio is never recorded or sent.
 // A breath is told from a voice or a clap by its shape: most of its energy sits under
-// 400 Hz, it is noise-like rather than musical, and it holds for nearly half a second.
+// 1 kHz, it is noise-like rather than musical, and it holds for nearly half a second.
 "use strict";
 
 (function () {
@@ -73,7 +73,17 @@
       return;
     }
     hint.textContent = "Asking for the microphone…";
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+    // Ask for a raw microphone: the phone's voice processing (noise suppression, echo
+    // cancellation, auto gain) is built to strip the broadband rush a breath makes.
+    var raw = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
+    navigator.mediaDevices.getUserMedia(raw).catch(function () {
+      return navigator.mediaDevices.getUserMedia({ audio: true });
+    }).then(function (stream) {
+      var got = {};
+      try { got = stream.getAudioTracks()[0].getSettings(); } catch (e) { /* older client */ }
+      var proc = ["echoCancellation", "noiseSuppression", "autoGainControl"].map(function (k) {
+        return k.slice(0, 4) + ":" + (got[k] === undefined ? "?" : got[k] ? "on" : "off");
+      }).join(" ");
       var Ctx = window.AudioContext || window.webkitAudioContext;
       var ctx = new Ctx();
       try { ctx.resume(); } catch (e) { /* already running */ }
@@ -81,7 +91,7 @@
       an.fftSize = 2048; an.smoothingTimeConstant = 0.5;
       ctx.createMediaStreamSource(stream).connect(an);
       var N = an.frequencyBinCount, db = new Float32Array(N), binHz = ctx.sampleRate / an.fftSize;
-      var lowTop = Math.round(400 / binHz), flatTop = Math.round(2000 / binHz), allTop = Math.round(4000 / binHz);
+      var lowTop = Math.round(1000 / binHz), flatTop = Math.round(2000 / binHz), allTop = Math.round(4000 / binHz);
       micOn = true;
       show(micBtn, false); show(meter, true);
       hint.textContent = "Listening for a breath.";
@@ -100,12 +110,12 @@
         var level = Math.min(1, Math.sqrt(allE / allTop) * 40);     // loudness, 0..1
         var ratio = allE ? lowE / allE : 0;                           // share under 400 Hz
         var flat = n ? Math.exp(logSum / n) / (linSum / n) : 0;        // 1 = pure noise, ~0 = a voice
-        var blowy = level > 0.12 && ratio > 0.6 && flat > 0.25;
+        var blowy = level > 0.1 && ratio > 0.55 && flat > 0.2;
         bar.style.width = Math.min(100, level * 120) + "%";
         bar.className = blowy ? "blow" : "";
         lean = blowy ? Math.min(55, level * 120) : 0;
         squash = blowy ? Math.max(0.35, 1 - level) : 1;
-        hint.textContent = "loud " + level.toFixed(2) + " · low " + ratio.toFixed(2) + " · flat " + flat.toFixed(2) + (blowy ? " · breath" : "");
+        hint.textContent = "loud " + level.toFixed(2) + " · low " + ratio.toFixed(2) + " · flat " + flat.toFixed(2) + (blowy ? " · breath" : "") + "\n" + proc;
         loud = blowy ? loud + dt : Math.max(0, loud - dt * 2);
         if (loud > 450) blowOut("mic");
         requestAnimationFrame(tick);
