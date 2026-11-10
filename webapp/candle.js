@@ -90,15 +90,26 @@
       var an = ctx.createAnalyser();
       an.fftSize = 2048; an.smoothingTimeConstant = 0.5;
       ctx.createMediaStreamSource(stream).connect(an);
-      var N = an.frequencyBinCount, db = new Float32Array(N), binHz = ctx.sampleRate / an.fftSize;
+      var N = an.frequencyBinCount, db = new Float32Array(N), wave = new Float32Array(an.fftSize);
+      var binHz = ctx.sampleRate / an.fftSize;
       var lowTop = Math.round(1000 / binHz), flatTop = Math.round(2000 / binHz), allTop = Math.round(4000 / binHz);
       micOn = true;
       show(micBtn, false); show(meter, true);
-      hint.textContent = "Listening for a breath.";
-      var last = performance.now();
+      hint.textContent = "Listening for a breath. Blow close to the bottom of the phone.";
+      var last = performance.now(), floor = 0, peak = 0;
       (function tick(now) {
         var dt = now - last; last = now;
         if (state !== "lit") { lean = 0; squash = 1; loud = 0; requestAnimationFrame(tick); return; }
+        // loudness from the waveform itself (the phone's gain varies; the shape doesn't)
+        an.getFloatTimeDomainData(wave);
+        var sq = 0;
+        for (var j = 0; j < wave.length; j++) sq += wave[j] * wave[j];
+        var rms = Math.sqrt(sq / wave.length);
+        // the room's quiet level: creeps up slowly, drops fast, never zero
+        floor = rms < floor ? floor * 0.9 + rms * 0.1 : floor + (rms - floor) * 0.01;
+        if (floor < 0.0015) floor = 0.0015;
+        var over = rms / floor;                                        // how far above quiet
+        if (rms > peak) peak = rms;
         an.getFloatFrequencyData(db);
         var lowE = 0, allE = 0, logSum = 0, linSum = 0, n = 0;
         for (var i = 1; i < allTop; i++) {
@@ -107,17 +118,18 @@
           if (i < lowTop) lowE += e;
           if (i >= 2 && i < flatTop) { logSum += Math.log(m + 1e-12); linSum += m; n++; }
         }
-        var level = Math.min(1, Math.sqrt(allE / allTop) * 40);     // loudness, 0..1
-        var ratio = allE ? lowE / allE : 0;                           // share under 400 Hz
+        var ratio = allE ? lowE / allE : 0;                           // share under 1 kHz
         var flat = n ? Math.exp(logSum / n) / (linSum / n) : 0;        // 1 = pure noise, ~0 = a voice
-        var blowy = level > 0.1 && ratio > 0.55 && flat > 0.2;
+        var blowy = over > 3 && ratio > 0.5 && flat > 0.15;
+        var level = Math.min(1, over / 12);
         bar.style.width = Math.min(100, level * 120) + "%";
         bar.className = blowy ? "blow" : "";
         lean = blowy ? Math.min(55, level * 120) : 0;
         squash = blowy ? Math.max(0.35, 1 - level) : 1;
-        hint.textContent = "loud " + level.toFixed(2) + " · low " + ratio.toFixed(2) + " · flat " + flat.toFixed(2) + (blowy ? " · breath" : "") + "\n" + proc;
+        hint.textContent = "x" + over.toFixed(1) + " over quiet · low " + ratio.toFixed(2) + " · flat " + flat.toFixed(2)
+          + (blowy ? " · breath" : "") + "\n" + proc + " · peak " + peak.toFixed(3) + " quiet " + floor.toFixed(3);
         loud = blowy ? loud + dt : Math.max(0, loud - dt * 2);
-        if (loud > 450) blowOut("mic");
+        if (loud > 400) blowOut("mic");
         requestAnimationFrame(tick);
       })(performance.now());
     }).catch(function (err) {
