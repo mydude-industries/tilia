@@ -120,8 +120,8 @@
         }
         var ratio = allE ? lowE / allE : 0;                           // share under 1 kHz
         var flat = n ? Math.exp(logSum / n) / (linSum / n) : 0;        // 1 = pure noise, ~0 = a voice
-        var blowy = over > 2 && ratio > 0.45 && flat > 0.15;
-        var level = Math.min(1, over / 8);
+        var blowy = over > 3 && ratio > 0.5 && flat > 0.15;
+        var level = Math.min(1, over / 12);
         bar.style.width = Math.min(100, level * 120) + "%";
         bar.className = blowy ? "blow" : "";
         lean = blowy ? Math.min(55, level * 120) : 0;
@@ -129,7 +129,7 @@
         hint.textContent = "x" + over.toFixed(1) + " over quiet · low " + ratio.toFixed(2) + " · flat " + flat.toFixed(2)
           + (blowy ? " · breath" : "") + "\n" + proc + " · peak " + peak.toFixed(3) + " quiet " + floor.toFixed(3);
         loud = blowy ? loud + dt : Math.max(0, loud - dt * 2);
-        if (loud > 300) blowOut("mic");
+        if (loud > 400) blowOut("mic");
         requestAnimationFrame(tick);
       })(performance.now());
     }).catch(function (err) {
