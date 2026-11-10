@@ -76,6 +76,7 @@ def test_mirror_has_no_external_refs(store):
     done(store, "blot", BLOT, seed=777)
     done(store, "tarot", [5, "the dog at the edge", 6], card="00-the-fool")
     html = mirror.render(store, NOW)
+    html = html.replace("http://www.w3.org/2000/svg", "")  # an identifier, never fetched
     for bad in ("http://", "https://", 'src="//', "<link", "@import", "<script src"):
         assert bad not in html, bad
     assert "default-src 'none'" in html  # a CSP that refuses any load
@@ -220,6 +221,7 @@ def test_mirror_renders_spread_positions(store, monkeypatch, tmp_path):
     assert item["read"] == SEALED and item["reply"] == "You saw the circle too."
     for name in entries.SPREADS["spread_three"] + ["The Fool", "Three of Cups", "The World"]:
         assert name in html
+    html = html.replace("http://www.w3.org/2000/svg", "")  # an identifier, never fetched
     for bad in ("http://", "https://", 'src="//', "<link", "@import", "<script src"):
         assert bad not in html, bad
     starts = tags(html)

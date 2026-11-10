@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "webapp"
 VENDOR = WEB / "vendor" / "telegram-web-app.js"
 FORBIDDEN = ("http://", "https://", 'src="//', 'href="//', "url(//", "@import")
+SVG_NS = "http://www.w3.org/2000/svg"
 
 
 def _own_files():
@@ -20,7 +21,8 @@ def test_webapp_references_no_other_origins():
     files = _own_files()
     assert any(p.name == "index.html" for p in files)
     for p in files:
-        text = p.read_text(encoding="utf-8")
+        # The SVG namespace is an identifier, never fetched; everything else must be ours.
+        text = p.read_text(encoding="utf-8").replace(SVG_NS, "")
         for bad in FORBIDDEN:
             assert bad not in text, f"{p.relative_to(ROOT)} contains {bad}"
 
@@ -37,7 +39,7 @@ def test_index_has_csp_and_relative_scripts():
     assert ('<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; img-src \'self\' '
             'data:; style-src \'self\' \'unsafe-inline\'; script-src \'self\'">') in html
     srcs = re.findall(r'<script[^>]*\bsrc="([^"]+)"', html)
-    assert srcs == ["vendor/telegram-web-app.js", "core.js", "blot.js", "app.js"]
+    assert srcs == ["vendor/telegram-web-app.js", "core.js", "blot.js", "flourish.js", "app.js"]
     assert "<script>" not in html  # CSP forbids inline scripts
 
 

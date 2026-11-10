@@ -420,6 +420,16 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .tease-small { justify-content: flex-start; margin: 0 0 var(--s3); }
 .tease .spread { margin: 0; }
 
+/* The spread outline (flourish.js): one fine ink line in the current colour. Faint and
+   large behind the face-down spread; a small mark above a card or spread pitch. */
+.tease-flourish { position: relative; }
+.tease-flourish .spread { position: relative; z-index: 1; }
+.flourish-spread {
+  position: absolute; left: 50%; top: 50%; width: 150%; max-width: 420px; aspect-ratio: 1;
+  transform: translate(-50%, -50%); color: var(--ink); opacity: 0.07; pointer-events: none;
+}
+.flourish-mark { display: block; width: 44px; height: 34px; margin: 0 auto var(--s2); color: var(--muted); opacity: 0.85; }
+
 /* The blot, folded: half a sheet of the blot's paper, its ink faint through the back.
    On its reveal the right half swings open on the fold (the sheet's centre line). */
 .fold {

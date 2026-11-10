@@ -24,6 +24,7 @@ WRITE_FAILED = ("I couldn't update Tilia Mirror just now, so the page on your Ma
                 "out of date. Try /mirror again in a bit.")
 TAROT_DIR = paths.REPO_ROOT / "webapp" / "tarot"
 BLOT_JS = paths.REPO_ROOT / "webapp" / "blot.js"
+FLOURISH_JS = paths.REPO_ROOT / "webapp" / "flourish.js"
 _CARD_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _SMALL = {"of", "the", "and"}
 
@@ -225,10 +226,13 @@ def _json_for_script(obj) -> str:
 
 def render(store, now) -> str:
     blot_js = BLOT_JS.read_text(encoding="utf-8")
-    if "</script" in blot_js.lower() or "<!--" in blot_js:
-        raise ValueError("blot.js cannot be inlined as it is")
+    flourish_js = FLOURISH_JS.read_text(encoding="utf-8")
+    for name, src in (("blot.js", blot_js), ("flourish.js", flourish_js)):
+        if "</script" in src.lower() or "<!--" in src:
+            raise ValueError(f"{name} cannot be inlined as it is")
     return (_HEAD + "<script type=\"application/json\" id=\"data\">"
             + _json_for_script(data(store, now)) + "</script>\n<script>\n" + blot_js
+            + "\n</script>\n<script>\n" + flourish_js
             + "\n</script>\n<script>\n" + _RENDER + "</script>\n</body>\n</html>\n")
 
 
@@ -451,6 +455,10 @@ dd { margin: var(--s1) 0 var(--s3); font: 18px/1.4 var(--serif); white-space: pr
 .spread .p4 { grid-area: p4; } .spread .p5 { grid-area: p5; }
 .spread-cross .p5 { justify-self: end; width: var(--col); }
 .tilia .read { margin: 0 0 var(--s4); font: italic 18px/1.45 var(--serif); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* the spread outline: a small mark above Tilia's sealed read, and faint behind the page */
+.flourish-mark { display: block; width: 44px; height: 34px; margin: 0 0 var(--s2); color: var(--muted); opacity: 0.85; }
+.flourish-wm { position: fixed; right: -6vw; bottom: -4vh; width: 58vw; max-width: 520px; aspect-ratio: 1; color: var(--ink); opacity: 0.05; pointer-events: none; z-index: 0; }
+#root { position: relative; z-index: 1; }
 
 footer { margin-top: var(--s6); font-size: 14px; color: var(--muted); max-width: 36em; }
 
@@ -494,6 +502,7 @@ _RENDER = r"""(function () {
   'use strict';
   var D = JSON.parse(document.getElementById('data').textContent);
   var root = document.getElementById('root');
+  document.body.appendChild(Flourish.svg('spread', 'flourish-wm'));
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -618,6 +627,7 @@ _RENDER = r"""(function () {
       }
       var t = add(sides, el('section', 'side tilia'));
       if (e.read || e.held_read) {  // the sealed read first, then what Tilia said after theirs
+        add(t, Flourish.svg('mark'));
         add(t, el('h4', 'label', e.read ? "Tilia's read, sealed before you looked"
                                         : "Tilia's read, written before you looked"));
         add(t, el('p', 'read', e.read || e.held_read));

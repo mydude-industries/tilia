@@ -813,6 +813,10 @@
       b.appendChild(cardBack());
       box.appendChild(b);
     } else if (isSpread()) {
+      if (!small) {  // the spread outline, faint, behind the cards face down
+        box.classList.add("tease-flourish");
+        box.appendChild(window.Flourish.svg("spread"));
+      }
       box.appendChild(spreadMap(small ? "mini" : "down"));
     } else {
       var f = el("div", "folded");
@@ -829,6 +833,7 @@
     var s = el("div", "card pitch" + (said ? " pitch-tease" : ""));
     s.appendChild(el("p", "label", sheet.title));
     if (said) {
+      if (isTarot() || isSpread()) s.appendChild(window.Flourish.svg("mark"));
       s.appendChild(tease(false));
       s.appendChild(el("h1", "q promise", said));
       s.appendChild(el("p", "hint promise-more", card.prompt));
