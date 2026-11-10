@@ -10,7 +10,9 @@
       say = document.getElementById("say"), hint = document.getElementById("hint"),
       meter = document.getElementById("meter"), bar = document.getElementById("bar"),
       micBtn = document.getElementById("mic"), again = document.getElementById("again"),
-      done = document.getElementById("done"), candle = document.getElementById("candle");
+      done = document.getElementById("done"), candle = document.getElementById("candle"),
+      after = document.getElementById("after"), follow = document.getElementById("follow");
+  var timers = [];
 
   var state = "unlit";     // unlit | lit | out
   var micOn = false, loud = 0, flick = 0, lean = 0, squash = 1;
@@ -26,8 +28,50 @@
 
   function show(el, on) { el.hidden = !on; }
 
+  function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+
+  // The follow-up condenses out of the smoke: each letter arrives a beat after the last.
+  function condense(lines) {
+    after.innerHTML = "";
+    var delay = 1300, step = 38;
+    lines.forEach(function (ln) {
+      var p = document.createElement("span");
+      p.className = "line" + (ln.small ? " small" : "");
+      Array.prototype.forEach.call(ln.text, function (c) {
+        var ch = document.createElement("span");
+        ch.className = "ch"; ch.textContent = c;
+        ch.style.animationDelay = delay + "ms";
+        delay += step;
+        p.appendChild(ch);
+      });
+      after.appendChild(p);
+      delay += 220;
+    });
+    after.classList.add("on");
+    return delay;
+  }
+
+  function smoke() {
+    for (var i = 0; i < 7; i++) {
+      var w = document.createElement("div");
+      w.className = "wisp";
+      w.style.setProperty("--sway", (Math.random() * 44 - 22) + "px");
+      w.style.animationDelay = (i * 160) + "ms";
+      w.style.animationDuration = (3000 + Math.random() * 1200) + "ms";
+      candle.appendChild(w);
+    }
+  }
+
+  function clearOut() {
+    timers.forEach(clearTimeout); timers = [];
+    after.classList.remove("on"); after.innerHTML = "";
+    follow.classList.remove("on"); show(follow, false);
+    Array.prototype.forEach.call(candle.querySelectorAll(".wisp"), function (w) { w.remove(); });
+  }
+
   function light() {
     state = "lit"; loud = 0;
+    clearOut();
     main.classList.remove("out"); main.classList.add("lit");
     say.textContent = "It's lit. One breath before you go.";
     hint.textContent = micOn ? "Listening for a breath." : "";
@@ -39,16 +83,31 @@
     if (state !== "lit") return;
     state = "out";
     main.classList.remove("lit"); main.classList.add("out");
-    say.textContent = "Out. How did it go?";
+    say.textContent = "";
     hint.textContent = how === "mic" ? "Blown out." : "Tapped out.";
-    show(micBtn, false); show(meter, false); show(again, true); show(done, true);
+    show(micBtn, false); show(meter, false); show(again, false); show(done, false);
     try { tg && tg.HapticFeedback.notificationOccurred("success"); } catch (e) { /* no haptics */ }
+    smoke();
+    var ready = condense([{ text: "It's out.", small: true }, { text: "How did it go?" }]);
+    later(function () { show(follow, true); follow.classList.add("on"); }, ready + 300);
   }
+
+  Array.prototype.forEach.call(follow.querySelectorAll("[data-pick]"), function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(follow.querySelectorAll("[data-pick]"), function (o) { o.disabled = o !== b; o.style.opacity = o === b ? 1 : .35; });
+      say.textContent = "Noted. Tilia will pick this up with you.";
+      show(again, true); show(done, true);
+      try { tg && tg.HapticFeedback.impactOccurred("light"); } catch (e) { /* no haptics */ }
+    });
+  });
 
   candle.addEventListener("click", function () {
     if (state === "lit") blowOut("tap"); else light();
   });
-  again.addEventListener("click", light);
+  again.addEventListener("click", function () {
+    Array.prototype.forEach.call(follow.querySelectorAll("[data-pick]"), function (o) { o.disabled = false; o.style.opacity = ""; });
+    light();
+  });
   done.addEventListener("click", function () {
     if (tg) { try { tg.close(); return; } catch (e) { /* fall through */ } }
     say.textContent = "You can close this page.";
