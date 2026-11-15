@@ -8,7 +8,7 @@
 <meta name="robots" content="noindex">
 <title>Tilia · candle</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="candle.css?v=11">
+<link rel="stylesheet" href="candle.css?v=12">
 <link rel="stylesheet" href="candle-follow.css?v=8">
 </head>
 <body>
@@ -26,7 +26,81 @@
     <div class="halo" aria-hidden="true"></div>
     <div class="flame" id="flame"></div>
     <div class="wick"></div>
-    <div class="wax"><div class="rim"></div><div class="drip"></div><div class="drip two"></div></div>
+    <div class="wax">
+<svg class="crown" viewBox="0 0 46 44" aria-hidden="true" focusable="false">
+<defs>
+ <linearGradient id="wx-cyl" gradientUnits="userSpaceOnUse" x1="2" y1="0" x2="44" y2="0">
+  <stop offset="0" stop-color="#3a2612" stop-opacity=".5"/><stop offset=".16" stop-color="#3a2612" stop-opacity=".16"/>
+  <stop offset=".32" stop-color="#3a2612" stop-opacity="0"/><stop offset=".42" stop-color="#fffcf0" stop-opacity=".26"/>
+  <stop offset=".56" stop-color="#fffcf0" stop-opacity="0"/><stop offset=".74" stop-color="#3a2612" stop-opacity=".1"/>
+  <stop offset="1" stop-color="#28190c" stop-opacity=".55"/></linearGradient>
+ <linearGradient id="wx-drip" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="40">
+  <stop offset="0" stop-color="#f6ecd6"/><stop offset=".5" stop-color="#ecdfc2"/><stop offset="1" stop-color="#ddcaa5"/></linearGradient>
+ <linearGradient id="wx-round" x1="0" y1="0" x2="1" y2="0">
+  <stop offset="0" stop-color="#fffaf0" stop-opacity=".45"/><stop offset=".35" stop-color="#fffaf0" stop-opacity="0"/>
+  <stop offset=".62" stop-color="#3a2612" stop-opacity="0"/><stop offset="1" stop-color="#3a2612" stop-opacity=".42"/></linearGradient>
+ <radialGradient id="wx-top" cx=".5" cy=".62" r=".6">
+  <stop offset="0" stop-color="#c9b089"/><stop offset=".55" stop-color="#dcc8a2"/><stop offset=".8" stop-color="#efe3c8"/><stop offset="1" stop-color="#f7eedb"/></radialGradient>
+ <linearGradient id="wx-pool" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#e6d5b2"/><stop offset=".45" stop-color="#c7ae84"/><stop offset="1" stop-color="#a88f68"/></linearGradient>
+ <linearGradient id="wx-glow" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="30">
+  <stop offset="0" stop-color="#ffc37a" stop-opacity=".75"/><stop offset=".3" stop-color="#ffaa5a" stop-opacity=".3"/><stop offset="1" stop-color="#ff9a4a" stop-opacity="0"/></linearGradient>
+ <radialGradient id="wx-poolglow" cx=".5" cy=".5" r=".5">
+  <stop offset="0" stop-color="#ffd690" stop-opacity=".95"/><stop offset=".6" stop-color="#ffb060" stop-opacity=".45"/><stop offset="1" stop-color="#ffa050" stop-opacity="0"/></radialGradient>
+ <filter id="wx-blur" x="-100%" y="-10%" width="300%" height="120%"><feGaussianBlur stdDeviation=".25"/></filter>
+ <filter id="wx-soft" x="-50%" y="-20%" width="200%" height="140%"><feGaussianBlur stdDeviation=".7"/></filter>
+</defs>
+<clipPath id="wx-body"><rect x="2" y="6" width="42" height="38"/></clipPath>
+<g clip-path="url(#wx-body)" filter="url(#wx-soft)" fill="#28190c" opacity=".38">
+ <path transform="translate(.9 .7)" d="M2.6 5.49 C1.6 7.89 1.92 9.29 1.83 10.69 C1.77 21.19 1.51 30.11 1.08 34.78 A2.92 3.15 0 0 0 6.92 34.78 C6.49 30.11 6.53 21.19 6.59 10.69 C6.68 9.29 7 7.89 8 5.49Z"/>
+ <path transform="translate(.9 .7)" d="M9.8 7.42 C10.8 9.82 11.04 11.22 11.13 12.62 C11.19 13.45 11.25 12.5 10.94 15.96 A2.16 2.33 0 0 0 15.26 15.96 C14.95 12.5 14.71 13.45 14.65 12.62 C14.56 11.22 14.8 9.82 15.8 7.42Z"/>
+ <path transform="translate(.9 .7)" d="M14.95 7.96 C15.95 10.36 16.46 11.76 16.46 13.16 C16.46 12.14 16.27 9.75 18.35 12.71 A1.85 2 0 0 0 22.05 12.71 C24.13 9.75 23.94 12.14 23.94 13.16 C23.94 11.76 24.45 10.36 25.45 7.96Z"/>
+ <path transform="translate(.9 .7)" d="M27.3 7.69 C28.3 10.09 28.58 11.49 28.7 12.89 C28.78 16.41 28.87 17.93 28.52 21.9 A2.48 2.68 0 0 0 33.48 21.9 C33.13 17.93 32.82 16.41 32.74 12.89 C32.62 11.49 32.9 10.09 33.9 7.69Z"/>
+ <path transform="translate(.9 .7)" d="M36.9 5.98 C37.9 8.38 38.2 9.78 38.32 11.18 C38.4 17.4 38.49 21.66 38.1 25.98 A2.7 2.92 0 0 0 43.5 25.98 C43.11 21.66 42.8 17.4 42.72 11.18 C42.6 9.78 42.9 8.38 43.4 5.98Z"/>
+</g>
+<g class="drips">
+ <path d="M2.6 5.49 C1.6 7.89 1.92 9.29 1.83 10.69 C1.77 21.19 1.51 30.11 1.08 34.78 A2.92 3.15 0 0 0 6.92 34.78 C6.49 30.11 6.53 21.19 6.59 10.69 C6.68 9.29 7 7.89 8 5.49Z" fill="url(#wx-drip)"/>
+ <path d="M9.8 7.42 C10.8 9.82 11.04 11.22 11.13 12.62 C11.19 13.45 11.25 12.5 10.94 15.96 A2.16 2.33 0 0 0 15.26 15.96 C14.95 12.5 14.71 13.45 14.65 12.62 C14.56 11.22 14.8 9.82 15.8 7.42Z" fill="url(#wx-drip)"/>
+ <path d="M14.95 7.96 C15.95 10.36 16.46 11.76 16.46 13.16 C16.46 12.14 16.27 9.75 18.35 12.71 A1.85 2 0 0 0 22.05 12.71 C24.13 9.75 23.94 12.14 23.94 13.16 C23.94 11.76 24.45 10.36 25.45 7.96Z" fill="url(#wx-drip)"/>
+ <path d="M27.3 7.69 C28.3 10.09 28.58 11.49 28.7 12.89 C28.78 16.41 28.87 17.93 28.52 21.9 A2.48 2.68 0 0 0 33.48 21.9 C33.13 17.93 32.82 16.41 32.74 12.89 C32.62 11.49 32.9 10.09 33.9 7.69Z" fill="url(#wx-drip)"/>
+ <path d="M36.9 5.98 C37.9 8.38 38.2 9.78 38.32 11.18 C38.4 17.4 38.49 21.66 38.1 25.98 A2.7 2.92 0 0 0 43.5 25.98 C43.11 21.66 42.8 17.4 42.72 11.18 C42.6 9.78 42.9 8.38 43.4 5.98Z" fill="url(#wx-drip)"/>
+</g><g fill="url(#wx-cyl)">
+ <path d="M2.6 5.49 C1.6 7.89 1.92 9.29 1.83 10.69 C1.77 21.19 1.51 30.11 1.08 34.78 A2.92 3.15 0 0 0 6.92 34.78 C6.49 30.11 6.53 21.19 6.59 10.69 C6.68 9.29 7 7.89 8 5.49Z"/>
+ <path d="M9.8 7.42 C10.8 9.82 11.04 11.22 11.13 12.62 C11.19 13.45 11.25 12.5 10.94 15.96 A2.16 2.33 0 0 0 15.26 15.96 C14.95 12.5 14.71 13.45 14.65 12.62 C14.56 11.22 14.8 9.82 15.8 7.42Z"/>
+ <path d="M14.95 7.96 C15.95 10.36 16.46 11.76 16.46 13.16 C16.46 12.14 16.27 9.75 18.35 12.71 A1.85 2 0 0 0 22.05 12.71 C24.13 9.75 23.94 12.14 23.94 13.16 C23.94 11.76 24.45 10.36 25.45 7.96Z"/>
+ <path d="M27.3 7.69 C28.3 10.09 28.58 11.49 28.7 12.89 C28.78 16.41 28.87 17.93 28.52 21.9 A2.48 2.68 0 0 0 33.48 21.9 C33.13 17.93 32.82 16.41 32.74 12.89 C32.62 11.49 32.9 10.09 33.9 7.69Z"/>
+ <path d="M36.9 5.98 C37.9 8.38 38.2 9.78 38.32 11.18 C38.4 17.4 38.49 21.66 38.1 25.98 A2.7 2.92 0 0 0 43.5 25.98 C43.11 21.66 42.8 17.4 42.72 11.18 C42.6 9.78 42.9 8.38 43.4 5.98Z"/>
+</g><g fill="url(#wx-round)">
+ <path d="M2.6 5.49 C1.6 7.89 1.92 9.29 1.83 10.69 C1.77 21.19 1.51 30.11 1.08 34.78 A2.92 3.15 0 0 0 6.92 34.78 C6.49 30.11 6.53 21.19 6.59 10.69 C6.68 9.29 7 7.89 8 5.49Z"/>
+ <path d="M9.8 7.42 C10.8 9.82 11.04 11.22 11.13 12.62 C11.19 13.45 11.25 12.5 10.94 15.96 A2.16 2.33 0 0 0 15.26 15.96 C14.95 12.5 14.71 13.45 14.65 12.62 C14.56 11.22 14.8 9.82 15.8 7.42Z"/>
+ <path d="M14.95 7.96 C15.95 10.36 16.46 11.76 16.46 13.16 C16.46 12.14 16.27 9.75 18.35 12.71 A1.85 2 0 0 0 22.05 12.71 C24.13 9.75 23.94 12.14 23.94 13.16 C23.94 11.76 24.45 10.36 25.45 7.96Z"/>
+ <path d="M27.3 7.69 C28.3 10.09 28.58 11.49 28.7 12.89 C28.78 16.41 28.87 17.93 28.52 21.9 A2.48 2.68 0 0 0 33.48 21.9 C33.13 17.93 32.82 16.41 32.74 12.89 C32.62 11.49 32.9 10.09 33.9 7.69Z"/>
+ <path d="M36.9 5.98 C37.9 8.38 38.2 9.78 38.32 11.18 C38.4 17.4 38.49 21.66 38.1 25.98 A2.7 2.92 0 0 0 43.5 25.98 C43.11 21.66 42.8 17.4 42.72 11.18 C42.6 9.78 42.9 8.38 43.4 5.98Z"/>
+</g>
+<ellipse cx="23" cy="6" rx="21" ry="4.6" fill="url(#wx-top)"/>
+<ellipse cx="23" cy="6.5" rx="15.8" ry="3" fill="url(#wx-pool)"/>
+<ellipse cx="23" cy="6.5" rx="15.8" ry="3" fill="none" stroke="#fff6e2" stroke-opacity=".35" stroke-width=".5"/>
+<path d="M3.4 7.4 A20.4 4.199999999999999 0 0 0 42.6 7.4" fill="none" stroke="#fffaf0" stroke-opacity=".55" stroke-width=".55" stroke-linecap="round"/>
+<g fill="none" stroke="#fffdf6" stroke-linecap="round" stroke-width=".55" opacity=".42" filter="url(#wx-blur)">
+ <path d="M3.22 10.49 Q2.78 22.64 2.69 35.21"/>
+ <path d="M12 12.42 Q12.19 14.19 12.13 16.28"/>
+ <path d="M29.68 12.69 Q29.96 17.3 29.88 22.28"/>
+ <path d="M39.4 10.98 Q39.67 18.48 39.58 26.38"/>
+</g>
+<g class="crown-glow">
+ <ellipse cx="23" cy="6" rx="21" ry="4.6" fill="url(#wx-glow)"/>
+ <clipPath id="wx-below"><path clip-rule="evenodd" d="M-2 -2H48V46H-2Z M2 6a21 4.6 0 1 0 42 0a21 4.6 0 1 0 -42 0Z"/></clipPath>
+ <g clip-path="url(#wx-below)">
+  <path d="M2.6 5.49 C1.6 7.89 1.92 9.29 1.83 10.69 C1.77 21.19 1.51 30.11 1.08 34.78 A2.92 3.15 0 0 0 6.92 34.78 C6.49 30.11 6.53 21.19 6.59 10.69 C6.68 9.29 7 7.89 8 5.49Z" fill="url(#wx-glow)"/>
+  <path d="M9.8 7.42 C10.8 9.82 11.04 11.22 11.13 12.62 C11.19 13.45 11.25 12.5 10.94 15.96 A2.16 2.33 0 0 0 15.26 15.96 C14.95 12.5 14.71 13.45 14.65 12.62 C14.56 11.22 14.8 9.82 15.8 7.42Z" fill="url(#wx-glow)"/>
+  <path d="M14.95 7.96 C15.95 10.36 16.46 11.76 16.46 13.16 C16.46 12.14 16.27 9.75 18.35 12.71 A1.85 2 0 0 0 22.05 12.71 C24.13 9.75 23.94 12.14 23.94 13.16 C23.94 11.76 24.45 10.36 25.45 7.96Z" fill="url(#wx-glow)"/>
+  <path d="M27.3 7.69 C28.3 10.09 28.58 11.49 28.7 12.89 C28.78 16.41 28.87 17.93 28.52 21.9 A2.48 2.68 0 0 0 33.48 21.9 C33.13 17.93 32.82 16.41 32.74 12.89 C32.62 11.49 32.9 10.09 33.9 7.69Z" fill="url(#wx-glow)"/>
+  <path d="M36.9 5.98 C37.9 8.38 38.2 9.78 38.32 11.18 C38.4 17.4 38.49 21.66 38.1 25.98 A2.7 2.92 0 0 0 43.5 25.98 C43.11 21.66 42.8 17.4 42.72 11.18 C42.6 9.78 42.9 8.38 43.4 5.98Z" fill="url(#wx-glow)"/>
+ </g>
+ <ellipse cx="23" cy="6.4" rx="13" ry="2.6" fill="url(#wx-poolglow)"/>
+</g>
+</svg>
+</div>
   </div>
 
   <p class="say" id="say"></p>

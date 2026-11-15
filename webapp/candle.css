@@ -171,30 +171,22 @@
   .lit .wax:after { opacity: 1; }
   .out .wax:after { transition: opacity 1.6s ease-out; }
 
-  /* the melted rim and the small pool of wax around the wick */
-  .rim { position: absolute; left: 0; right: 0; top: -4px; height: 9px; border-radius: 50%;
-    background: radial-gradient(ellipse 52% 46% at 50% 54%, #b9a27a 0, #cfba93 45%, #e9dbbd 72%, #f6ecd6 88%, #eadcbf 100%);
-    box-shadow: inset 0 -1px 0 rgba(255, 248, 230, .5), 0 1px 1px rgba(60, 40, 20, .25); }
-  .rim:after { content: ""; position: absolute; left: 22%; right: 22%; top: 28%; bottom: 22%; border-radius: 50%; opacity: 0;
-    background: radial-gradient(closest-side, rgba(255, 214, 140, .9), rgba(255, 190, 100, .35) 60%, rgba(255, 190, 100, 0));
-    transition: opacity var(--warm); }
-  .lit .rim:after { opacity: 1; }
-  .out .rim:after { transition: opacity 1.2s ease-out; }
+  /* the melted top: the lip, the hollow pool round the wick and the drips, drawn as one
+     piece (inline SVG in candle.html) so they take the candle's own round shading. It hangs
+     6px above the wax top and 2px past each side, so edge drips bulge past the silhouette.
+     When the wax burns short, drips longer than what is left are cut at the table. */
+  .crown { position: absolute; z-index: 1; left: -2px; top: -6px; width: 46px; height: 44px; overflow: visible;
+    clip-path: inset(-2px -4px max(0px, calc(var(--burnt, 0px) - 82px)) -4px); }
+  .crown-glow { opacity: 0; transition: opacity var(--warm); }
+  .lit .crown-glow { opacity: 1; }
+  .out .crown-glow { transition: opacity 1.2s ease-out; }
 
   /* lit from their words: the room's light follows the flame as it grows from them
      (--kindle 0..1, set every frame by the morph), so nothing switches on at the end */
-  .rising .glow, .rising .halo, .rising .candle:before, .rising .wax:after, .rising .rim:after {
+  .rising .glow, .rising .halo, .rising .candle:before, .rising .wax:after, .rising .crown-glow {
     opacity: var(--kindle, 0); transition: none; }
   .rising .wax { filter: brightness(calc(.46 + .54 * var(--kindle, 0))) saturate(calc(.9 + .1 * var(--kindle, 0)));
     transition: none; }
-
-  /* drips: tongues of wax over the rim and down the side, rounded where they stopped */
-  .drip { position: absolute; left: 0; top: -2px; width: 6px; height: min(31px, calc(116px - var(--burnt, 0px))); border-radius: 2px 3px 4px 4px / 2px 3px 6px 6px;
-    background:
-      linear-gradient(90deg, rgba(255, 250, 236, .3), rgba(255, 250, 236, 0) 45%, rgba(58, 38, 18, .3)),
-      linear-gradient(180deg, #efe2c5, #e2d1ae 70%, #ebdcbd 88%, #d6c29b);
-    box-shadow: 1px 1px 1px rgba(40, 26, 12, .3); }
-  .drip.two { left: auto; right: 6px; width: 5px; height: min(15px, calc(110px - var(--burnt, 0px))); border-radius: 2px 2px 3px 3px / 2px 2px 5px 5px; }
 
   /* the old CSS flame; the flame module draws its own and hides this, but it stays as a fallback */
   .flame { position: absolute; left: 50%; bottom: calc(128px - var(--burnt, 0px)); width: 20px; height: 48px; margin-left: -10px; opacity: 0;
