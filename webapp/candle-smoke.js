@@ -1,8 +1,10 @@
 // The smoke that becomes the follow-up. Owned by the smoke module: candle.js only calls
 // CandleSmoke.init(canvas, main, candle), CandleSmoke.morph([small, big], onReady),
-// CandleSmoke.rise(text, onDone) and CandleSmoke.clear().
-// rise is the morph run backwards: their words come apart into motes that drift down and
-// gather into the wick, and onDone (lighting it) runs as the last of them arrive.
+// CandleSmoke.rise(text, onGather, onDone) and CandleSmoke.clear().
+// rise is the morph backwards: their words come apart into motes that fall into the flame's
+// own shape and become it. onGather(frac, fade) is called every frame with how much of the
+// words has arrived (the flame grows by it, and returns its size); onDone (lighting it)
+// runs once the last has merged.
 "use strict";
 
 window.CandleSmoke = (function () {
@@ -36,6 +38,7 @@ window.CandleSmoke = (function () {
   var SMOKE = sprite("206,201,191", SOFT);
   var EMBER = sprite("255,178,82", HOT);
   var INK = sprite("236,231,218", HOT);
+  var FLAME = sprite("255,214,112", HOT);                 // the flame's yellow body (rise)
 
   // ---- the air: a divergence-free swirl from a few drifting plane waves ----
   // psi = sum a*sin(k.x + w t + p); velocity = (dpsi/dy, -dpsi/dx). Smooth in space, so
@@ -351,12 +354,19 @@ window.CandleSmoke = (function () {
     anim = requestAnimationFrame(frame);
   }
 
-  // ---- rise: the morph backwards. The words come apart, left to right, into motes that
-  // warm as they fall and gather into the wick along soft curves; the air still moves
-  // them a little, less the closer they get, so every one arrives.
-  function rise(text, onDone) {
+  // ---- rise: their words become the flame, on one timeline. The words come apart, left
+  // to right, into motes; each mote is given a place inside the flame's own shape (sampled
+  // once, base first) and pulled to it on a damped spring that stiffens as it goes, so it
+  // lifts off like smoke, falls with real momentum, overshoots a little and settles. As a
+  // mote reaches its place it warms from smoke-grey through ember to the flame's yellow and
+  // fades into the flame, and the flame grows by what has arrived (onGather(frac) returns
+  // the flame's size now, so later motes aim at the flame as it has grown). The first to
+  // land spark the wick; onDone (the candle is lit) runs once the last has merged. No mote
+  // vanishes and no flame pops in: the light only moves from the motes into the flame.
+  function rise(text, onGather, onDone) {
     clear();
     newAir();
+    var C = window.CandleCore;
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     var mr = main.getBoundingClientRect();
     var tip = tipNow();
@@ -368,47 +378,87 @@ window.CandleSmoke = (function () {
       return { text: ln, font: fit.font, y: ty - (fit.lines.length - 1) * gap / 2 + k * gap };
     });
     var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function gathered(frac, fade) { var g = onGather ? onGather(frac, fade) : frac; return isFinite(g) ? g : frac; }
+    function finish() { if (onDone) { var d = onDone; onDone = null; d(); } }
     function drawWords(g, a) {
       g.textAlign = "center"; g.textBaseline = "middle"; g.globalAlpha = a;
       g.shadowColor = "rgba(255,168,64,0.2)"; g.shadowBlur = 7; g.fillStyle = "#ece7da";
       L.forEach(function (ln) { g.font = ln.font; g.fillText(ln.text, W / 2, ln.y); });
       g.shadowBlur = 0; g.shadowColor = "transparent"; g.globalAlpha = 1;
     }
-    if (calm) {                                                         // no drifting: the words fade, then it lights
+    if (calm) {                                                         // no drifting: the words crossfade into the flame
       var c0 = null;
       anim = requestAnimationFrame(function still(now) {
         if (c0 === null) c0 = now;
-        var a = 1 - clamp01((now - c0 - 500) / 700);
+        var a = 1 - clamp01((now - c0 - 500) / 900);
         gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
         drawWords(gfx, a);
-        if (a <= 0) { anim = null; if (onDone) { var d = onDone; onDone = null; d(); } return; }
+        gathered(1, 1 - a);
+        if (a <= 0) { anim = null; finish(); return; }
         anim = requestAnimationFrame(still);
       });
       return;
     }
 
     var pts = textPoints(W, H, L, dpr), n = pts.length;
-    var HOLD = 650, SPREAD = 900, TRAVEL = 1250;                       // words show, come apart, fall
+    var HOLD = 650, SPREAD = 900;                                      // words show, then come apart
+    var LOCK = 2100, MERGE = 260;                                      // by LOCK every mote is home; it fades in MERGE ms
+    var places = C.teardropPoints(n, 7);
     var P = pts.map(function (q, i) {
       var r = n > 1 ? i / (n - 1) : 0;
       return {
-        x0: q.x, y0: q.y, x: q.x, y: q.y, go: HOLD + r * SPREAD + Math.random() * 120,
-        dur: TRAVEL * (0.85 + Math.random() * 0.3), side: (Math.random() - 0.5) * 70,
-        ph: Math.random() * 6.283, done: false
+        x: q.x, y: q.y, vx: (Math.random() - 0.5) * 24, vy: -18 - Math.random() * 30,  // lifts off like smoke
+        go: HOLD + r * SPREAD + Math.random() * 120, at: places[i],
+        d0: -1, heat: 0, m: 0
       };
     });
-    var END_AT = HOLD + SPREAD + 120 + TRAVEL * 1.15;
     // the crisp words are hidden in the same left-to-right wave the motes leave in
     var tc = document.createElement("canvas"); tc.width = fx.width; tc.height = fx.height;
     var tgc = tc.getContext("2d");
     var x0 = 1e9, x1 = -1e9;
     pts.forEach(function (q) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; });
-    var t0 = null, fired = false;
+    var t0 = null, last = 0, grow = 0, merged = 0;
+
+    // one physics step (the frame loop runs several when the page stalls, so motion keeps real time)
+    function move(t, dt, tip) {
+      var ts = t / 1000, i, p, g, q, k, c, dx, dy, d, loose, lock;
+      for (i = 0; i < n; i++) {
+        p = P[i]; g = t - p.go;
+        if (g < 0 || p.m >= 1) continue;
+        q = C.teardropAt(p.at, grow);
+        var tx = tip[0] + q.x, ty2 = tip[1] + q.y;
+        k = 4 + 66 * smooth(80, 1150, g); c = 2 * 0.52 * Math.sqrt(k);    // a soft start, then a firm, slightly springy pull
+        dx = tx - p.x; dy = ty2 - p.y;
+        swirl(p.x, p.y, ts);
+        loose = 7 * (1 - p.heat) * (1 - smooth(500, 1300, g));             // the air carries them early on, not near the flame
+        p.vx += (k * dx - c * p.vx + loose * air[0]) * dt;
+        p.vy += (k * dy - c * p.vy + loose * air[1]) * dt;
+        var sp = p.vx * p.vx + p.vy * p.vy;
+        if (sp > 360000) { var s2 = 600 / Math.sqrt(sp); p.vx *= s2; p.vy *= s2; }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        lock = smooth(LOCK - 500, LOCK, g);                                // the last of the way is guaranteed
+        if (lock > 0) { p.x += (tx - p.x) * lock * 0.25; p.y += (ty2 - p.y) * lock * 0.25; p.vx *= 1 - lock * 0.25; p.vy *= 1 - lock * 0.25; }
+        dx = tx - p.x; dy = ty2 - p.y; d = Math.sqrt(dx * dx + dy * dy);
+        if (p.d0 < 0) p.d0 = Math.max(6, d);
+        p.heat = Math.max(p.heat, clamp01(1.12 - d / p.d0));
+        if (p.m > 0 || (d < 3.5 && g > 300) || g > LOCK) {                 // home: fade into the flame
+          var dm = Math.min(1 - p.m, dt * 1000 / MERGE);
+          p.m += dm; merged += dm;
+        }
+      }
+    }
 
     function frame(now) {
-      if (t0 === null) t0 = now;
-      var t = now - t0, tip = tipNow(), ts = t / 1000, i, p;
+      if (t0 === null) { t0 = now; last = now; }
+      var t = now - t0, raw = Math.min(0.066, Math.max(0.001, (now - last) / 1000)); last = now;
+      var tip = tipNow(), i, p;
       gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
+
+      var steps = Math.min(4, Math.ceil(raw / 0.0167));
+      for (var st = 1; st <= steps; st++) move(t - (steps - st) * raw * 1000 / steps, raw / steps, tip);
+      var frac = n ? merged / n : 1;
+      if (frac > 0.9999) frac = 1;
+      grow = gathered(frac, 1);
 
       // the words, wiped away left to right as their motes leave
       if (t < HOLD + SPREAD + 500 && n) {
@@ -426,40 +476,22 @@ window.CandleSmoke = (function () {
         gfx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
 
-      // the motes: off the letters, down a soft curve into the wick
-      var left = 0;
+      // the motes: smoke-grey, warming to ember, then the flame's yellow as they arrive
       gfx.globalCompositeOperation = "lighter";
-      for (i = 0; i < P.length; i++) {
+      for (i = 0; i < n; i++) {
         p = P[i];
-        var g = t - p.go;
-        if (g < 0) { left++; continue; }
-        var u = clamp01(g / p.dur);
-        if (u >= 1) { p.done = true; continue; }
-        left++;
-        var e = u * u * (3 - 2 * u);
-        var cx = p.x0 + (tip[0] - p.x0) * 0.25 + p.side, cy = p.y0 + (tip[1] - p.y0) * 0.35;
-        var bx = (1 - e) * (1 - e) * p.x0 + 2 * (1 - e) * e * cx + e * e * tip[0];
-        var by = (1 - e) * (1 - e) * p.y0 + 2 * (1 - e) * e * cy + e * e * (tip[1] - 1);
-        swirl(bx, by, ts);
-        var loose = Math.sin(Math.PI * e) * 0.06;                    // the air moves them mid-way only
-        p.x = bx + air[0] * loose + Math.sin(t * 0.004 + p.ph) * 1.5 * (1 - e);
-        p.y = by + air[1] * loose;
-        var warm = smooth(0.15, 0.85, e);
-        var size = 4.2 - 2.2 * e;
-        gfx.globalAlpha = (0.5 - 0.2 * warm) * (1 - smooth(0.9, 1, u));
-        gfx.drawImage(warm > 0.5 ? EMBER : INK, p.x - size / 2, p.y - size / 2, size, size);
-        if (warm > 0.05) {
-          gfx.globalAlpha = 0.35 * warm * (1 - smooth(0.92, 1, u));
-          gfx.drawImage(EMBER, p.x - size, p.y - size, size * 2, size * 2);
-        }
+        if (t < p.go || p.m >= 1) continue;
+        var h = p.heat, a = (1 - p.m) * (0.5 - 0.22 * h);
+        var size = 4 - 1.6 * h;
+        var lo = h < 0.55 ? INK : EMBER, hi = h < 0.55 ? EMBER : FLAME;
+        var f = h < 0.55 ? smooth(0.1, 0.55, h) : smooth(0.6, 0.95, h);
+        if (a * (1 - f) > 0.004) { gfx.globalAlpha = a * (1 - f); gfx.drawImage(lo, p.x - size / 2, p.y - size / 2, size, size); }
+        if (a * f > 0.004) { gfx.globalAlpha = a * f; gfx.drawImage(hi, p.x - size / 2, p.y - size / 2, size, size); }
       }
       gfx.globalCompositeOperation = "source-over"; gfx.globalAlpha = 1;
-      if (!fired && (t > END_AT - 220 || (t > HOLD + SPREAD && left < n * 0.04))) {
-        fired = true;
-        if (onDone) { var d = onDone; onDone = null; d(); }
-      }
-      if (left > 0 || t < END_AT) anim = requestAnimationFrame(frame);
-      else { anim = null; gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H); }
+
+      if (frac >= 1) { anim = null; gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H); finish(); return; }
+      anim = requestAnimationFrame(frame);
     }
     anim = requestAnimationFrame(frame);
   }

@@ -202,7 +202,63 @@
     return clamp01(calm);
   }
 
+  /* ---- the flame's shape, shared by the flame (which draws it) and the smoke (whose
+     motes gather into it). At full size the flame is FLAME_H tall from just above the wick
+     and FLAME_R wide at its widest; flameWidth(t) is its width profile along the spine,
+     t = 0 at the wick to 1 at the tip (a rounded cup, then a long taper). */
+  var FLAME_H = 47, FLAME_R = 7.2;
+  function flameWidth(t) {
+    return t < 0.24 ? 0.42 + 0.58 * Math.sin(t / 0.24 * Math.PI / 2) : Math.pow((1 - t) / 0.76, 1.12);
+  }
+
+  function seeded(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* n places inside the flame, spread evenly over its area, as { t, v }: t along the spine
+     (0 wick .. 1 tip), v across it (-1 .. 1 of the width there, kept to the inner 85%).
+     The same n and seed always give the same places; they come base first, so the first
+     motes to arrive land at the wick and light it. */
+  function teardropPoints(n, seed) {
+    var r = seeded(seed === undefined ? 1 : seed), out = [];
+    n = Math.max(0, Math.floor(+n || 0));
+    while (out.length < n) {
+      var t = r();
+      if (r() > flameWidth(t)) continue;                 // wider rows hold more places
+      out.push({ t: t, v: (r() * 2 - 1) * 0.85 });
+    }
+    out.sort(function (a, b) { return a.t - b.t; });
+    return out;
+  }
+
+  /* Where a place sits for a flame grown to `grow` (0 nothing .. 1 full; a little over while
+     it overshoots), in px from the wick tip: x right, y down (so negative is above). The
+     same scaling the flame uses: height with grow, width with grow^0.55. */
+  function teardropAt(p, grow) {
+    var g = grow < 0 ? 0 : grow > 1.2 ? 1.2 : grow;
+    return { x: p.v * FLAME_R * flameWidth(p.t) * Math.pow(g, 0.55), y: -1 - p.t * FLAME_H * g };
+  }
+
+  /* One step of a damped spring pulling x toward `to` (stiffness k, damping c, dt in s),
+     semi-implicit so it stays stable at frame rates. Returns [x, v]. */
+  function springStep(x, v, to, k, c, dt) {
+    v += (k * (to - x) - c * v) * dt;
+    return [x + v * dt, v];
+  }
+
   return {
+    FLAME_H: FLAME_H,
+    FLAME_R: FLAME_R,
+    flameWidth: flameWidth,
+    teardropPoints: teardropPoints,
+    teardropAt: teardropAt,
+    springStep: springStep,
     BURN_MS: BURN_MS,
     INTENTION_MAX: INTENTION_MAX,
     CALM_WINDOW_S: CALM_WINDOW_S,

@@ -163,7 +163,8 @@
     show(resendBtn, false);
   }
 
-  // their words drift down into the wick, then it lights
+  // their words fall into the wick and become the flame: one continuous morph, the flame
+  // growing by what has arrived; it is lit once the last of them has merged
   function begin() {
     if (state !== "unlit") return;
     var words = K.cleanIntention(field.value);
@@ -173,7 +174,12 @@
     state = "rising";
     main.classList.add("rising");
     say.textContent = "";
-    CandleSmoke.rise(words, function () {
+    main.style.setProperty("--kindle", "0");
+    CandleSmoke.rise(words, function (frac, fade) {
+      var grow = CandleFlame.gather(frac, fade);
+      main.style.setProperty("--kindle", (Math.min(1, grow) * (fade === undefined ? 1 : fade)).toFixed(3));
+      return grow;
+    }, function () {
       main.classList.remove("rising");
       light(words, Date.now(), false);
     });
@@ -185,6 +191,7 @@
     lit = { litAt: litAt, intention: intention };
     clearOut();
     if (!already) saveLit();
+    var top0 = candle.getBoundingClientRect().top;
     var f = burnNow();
     CandleFlame.setState("lit", already);
     main.classList.remove("out", "rising"); main.classList.add("lit");
@@ -195,9 +202,22 @@
         : "Still burning. Blow it out when it's done.";
     hint.textContent = micOn ? "Listening." : "";
     show(ask, false); show(micBtn, !micOn); show(meter, micOn); show(again, false); show(done, false);
+    if (!already) glide(top0);
     clearInterval(burnTimer);
     burnTimer = setInterval(burnNow, 30000);
     if (!already) haptic("light");
+  }
+
+  // the lit words above are a different length, so the candle may sit higher or lower now:
+  // it glides there (with its flame) instead of jumping
+  function glide(top0) {
+    var dy = top0 - candle.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) return;
+    candle.style.transition = "none";
+    candle.style.transform = "translateY(" + dy.toFixed(1) + "px)";
+    void candle.offsetWidth;
+    candle.style.transition = "";
+    candle.style.transform = "";
   }
 
   function blowOut(how) {

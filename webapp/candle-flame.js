@@ -1,12 +1,17 @@
 // The flame. Owned by the flame module: candle.js only calls CandleFlame.init(candleEl),
 // CandleFlame.setState("unlit" | "lit" | "out", already), CandleFlame.setBreath(lean, squash),
-// CandleFlame.setCalm(c) and CandleFlame.setBurn(f). lean is 0..55 (degrees away from the
+// CandleFlame.setCalm(c), CandleFlame.setBurn(f) and CandleFlame.gather(frac, fade). lean is 0..55 (degrees away from the
 // breath; positive bends the flame to the left) and squash is 1 (none) down to 0.35.
 // `already`: a candle lit earlier and reopened burns at once, with no spark.
 // c is how calm the breathing sounds, 0..1: 0.5 (the default) is the flame as it always
 // was; toward 1 it steadies, toward 0 it flickers. It eases over a couple of seconds.
 // f is how far it has burned, 0..1: the wax has been shortened (candle.css --burnt), so
 // the flame re-finds the wick; in the last tenth it gutters down to a small low flame.
+// gather: lit from their words. frac (0..1) is how much of the words has arrived in the
+// wick; the flame's size follows it on a damped spring (so it swells, overshoots a little
+// and settles), the first arrival sparks it, and gather returns the size it has now so the
+// motes can aim at the flame as it is. fade (0..1) is for reduced motion: the whole flame
+// fades in instead. A later setState("lit") leaves a gathered flame as it is.
 //
 // Drawn on one small canvas laid over the wick. The flame is a bent spine with a teardrop
 // width profile; soft pre-rendered discs are stamped along it in layers (blue cup, orange
@@ -26,6 +31,8 @@ window.CandleFlame = (function () {
   var calmT = 0.5, calm = 0.5, burn = 0, host = null;
   var sparks = [];
   var spr = {};
+  var K = window.CandleCore;
+  var gathering = false, gT = 0, gGrow = 0, gV = 0, gFade = 1, ignAt = 0;  // lit from the words
 
   // ---- noise -------------------------------------------------------------------------
   var P = new Float32Array(256);
@@ -126,7 +133,7 @@ window.CandleFlame = (function () {
     pts.length = 0;
     for (var i = 0; i <= n; i++) {
       var t = i / n;
-      var w = t < 0.24 ? 0.42 + 0.58 * Math.sin(t / 0.24 * Math.PI / 2) : Math.pow((1 - t) / 0.76, 1.12);
+      var w = K.flameWidth(t);
       pts.push(x, y, t, Math.max(0.7, R * w));
       var phi = a * Math.pow(t, 0.65) + sway * t + ripA * t * t * Math.sin(t * 6.5 - T * ripF);
       x -= Math.sin(phi) * ds;
@@ -236,9 +243,16 @@ window.CandleFlame = (function () {
     var keep = true;
 
     if (state === "lit") {
-      var L = ts - litAt;
-      var grow = L < 150 ? 0 : backOut(clamp((L - 150) / 700, 0, 1));
-      if (L < 260) {                                       // the spark
+      var L = ts - litAt, grow;
+      if (gathering) {                                     // the size follows the gathered words
+        var gk = 55, gc = 2 * 0.5 * Math.sqrt(gk), sub = Math.ceil(dt / 0.017);
+        for (var q = 0; q < sub; q++) { var sv = K.springStep(gGrow, gV, gT, gk, gc, dt / sub); gGrow = sv[0]; gV = sv[1]; }
+        grow = clamp(gGrow, 0, 1.2);
+        L = ignAt ? ts - ignAt : -1;                       // no spark until the first of them lands
+      } else {
+        grow = L < 150 ? 0 : backOut(clamp((L - 150) / 700, 0, 1));
+      }
+      if (L >= 0 && L < 260) {                                       // the spark
         ctx.globalCompositeOperation = "lighter";
         var s = 1 - L / 260;
         stamp(spr.spark, OX, OY - 1, 2 + 5 * s * s, s);
@@ -246,16 +260,17 @@ window.CandleFlame = (function () {
         ctx.globalCompositeOperation = "source-over";
       }
       drawSparks(dt);
-      var bead = sstep(30, 200, L) * (1 - sstep(0.25, 0.75, grow));   // the bead of blue
+      var bead = (L >= 0 ? sstep(30, 200, L) : 0) * (1 - sstep(0.25, 0.75, grow));   // the bead of blue
       if (bead > 0) {
         ctx.globalCompositeOperation = "lighter";
         stamp(spr.blue, OX, OY - 2.5, 2 + 3 * sstep(30, 260, L), 0.95 * bead);
         stamp(spr.spark, OX, OY - 2.2, 1.2, 0.5 * bead);
         ctx.globalCompositeOperation = "source-over";
       }
-      var lvl = grow > 0 ? drawFlame(grow, 1, 0, 0) : 0;
+      var fl = gathering ? gFade : 1;
+      var lvl = grow > 0 ? drawFlame(grow, fl, 0, 0) : 0;
       drawWaxLight(lvl * Math.min(1, grow));
-      drawEmber((0.4 + 0.5 * sstep(0.9, 1, burn)) * sstep(0.3, 1, grow), 0);  // the wick tip glowing inside the flame
+      drawEmber((0.4 + 0.5 * sstep(0.9, 1, burn)) * sstep(0.3, 1, grow) * fl, 0);  // the wick tip glowing inside the flame
     } else if (state === "out") {
       var O = ts - outAt;
       var c = clamp(O / 250, 0, 1);
@@ -284,6 +299,7 @@ window.CandleFlame = (function () {
 
   function setState(s, already) {
     var t = performance.now();
+    if (s !== "lit" || state !== "lit") gathering = false;
     if (s === "lit" && state !== "lit" && already) {
       litAt = t - 2000; sparks.length = 0;                 // burning already: no spark, full height
     } else if (s === "lit" && state !== "lit") {
@@ -318,5 +334,28 @@ window.CandleFlame = (function () {
     if (host) measure(host);                             // the wick sits lower on shorter wax
   }
 
-  return { init: init, setState: setState, setBreath: setBreath, setCalm: setCalm, setBurn: setBurn };
+  function burst(n) {
+    sparks.length = 0;
+    for (var i = 0; i < n; i++) {
+      var ang = (Math.random() - 0.5) * 1.9, sp = 45 + Math.random() * 70;
+      var life = 0.22 + Math.random() * 0.22;
+      sparks.push({ x: OX, y: OY - 1, vx: Math.sin(ang) * sp, vy: -Math.cos(ang) * sp, life: life, max: life });
+    }
+  }
+  function gather(frac, fade) {
+    if (!ctx) return 0;
+    if (!gathering || state !== "lit") {
+      state = "lit"; gathering = true; litAt = performance.now();
+      gGrow = 0; gV = 0; ignAt = 0; sparks.length = 0; leanT = 0; squashT = 1;
+      start();
+    }
+    frac = +frac; fade = fade === undefined ? 1 : +fade;
+    gT = isFinite(frac) ? clamp(frac, 0, 1) : 0;
+    gFade = isFinite(fade) ? clamp(fade, 0, 1) : 1;
+    if (gFade < 1) { gGrow = gT; gV = 0; ignAt = -1e9; }  // reduced motion: no swell or spark, a fade
+    else if (gT > 0 && !ignAt) { ignAt = performance.now(); burst(4); }
+    return clamp(gGrow, 0, 1.2);
+  }
+
+  return { init: init, setState: setState, gather: gather, setBreath: setBreath, setCalm: setCalm, setBurn: setBurn };
 })();

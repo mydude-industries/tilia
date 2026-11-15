@@ -181,6 +181,13 @@
   .lit .rim:after { opacity: 1; }
   .out .rim:after { transition: opacity 1.2s ease-out; }
 
+  /* lit from their words: the room's light follows the flame as it grows from them
+     (--kindle 0..1, set every frame by the morph), so nothing switches on at the end */
+  .rising .glow, .rising .halo, .rising .candle:before, .rising .wax:after, .rising .rim:after {
+    opacity: var(--kindle, 0); transition: none; }
+  .rising .wax { filter: brightness(calc(.46 + .54 * var(--kindle, 0))) saturate(calc(.9 + .1 * var(--kindle, 0)));
+    transition: none; }
+
   /* drips: tongues of wax over the rim and down the side, rounded where they stopped */
   .drip { position: absolute; left: 0; top: -2px; width: 6px; height: min(31px, calc(116px - var(--burnt, 0px))); border-radius: 2px 3px 4px 4px / 2px 3px 6px 6px;
     background:

@@ -215,3 +215,43 @@ test("other entries' sent candles are swept at once; this entry's is kept to res
   };
   assert.deepEqual(K.staleCandles(items, now, "candle_dddddddddddd"), ["candle_aaaaaaaaaaaa"]);
 });
+
+// The words become the flame: their motes gather into places sampled from its shape.
+test("teardrop places: a stable count, the same every time, all inside the flame", () => {
+  for (const n of [0, 1, 37, 960]) {
+    const a = K.teardropPoints(n, 7), b = K.teardropPoints(n, 7);
+    assert.equal(a.length, n);
+    assert.deepEqual(a, b);
+  }
+  const pts = K.teardropPoints(960, 7);
+  for (let i = 1; i < pts.length; i++) assert.ok(pts[i].t >= pts[i - 1].t, "base first");
+  for (const grow of [0.05, 0.4, 1, 1.15]) {
+    const g = Math.min(1.2, grow), h = K.FLAME_H * g, rw = K.FLAME_R * Math.pow(g, 0.55);
+    for (const p of pts) {
+      assert.ok(p.t >= 0 && p.t <= 1);
+      const q = K.teardropAt(p, grow);
+      assert.ok(q.y <= -1 && q.y >= -1 - h - 1e-9, "between the wick and the tip");
+      assert.ok(Math.abs(q.x) <= rw * K.flameWidth(p.t) + 1e-9, "inside the width at that height");
+    }
+  }
+  // spread over the area: the lower half (the wide cup and body) holds most of them
+  const low = pts.filter((p) => p.t < 0.5).length;
+  assert.ok(low > 0.55 * pts.length && low < 0.85 * pts.length, `lower half ${low}`);
+  // grown to nothing, every place is at the wick
+  for (const p of pts.slice(0, 20)) { const q = K.teardropAt(p, 0); assert.ok(q.x === 0 && q.y === -1); }
+});
+
+test("spring step: under-damped overshoots once, then settles on the target", () => {
+  let x = 0, v = 0, peak = 0;
+  const k = 55, c = 2 * 0.5 * Math.sqrt(k);
+  for (let i = 0; i < 60 * 4; i++) {
+    [x, v] = K.springStep(x, v, 1, k, c, 1 / 60);
+    peak = Math.max(peak, x);
+  }
+  assert.ok(peak > 1.05 && peak < 1.3, `overshoot ${peak}`);
+  assert.ok(Math.abs(x - 1) < 0.005 && Math.abs(v) < 0.05, `settled ${x} ${v}`);
+  // stable at the slowest frame the page allows (dt 0.05 s)
+  x = 0; v = 0;
+  for (let i = 0; i < 200; i++) [x, v] = K.springStep(x, v, 1, 70, 2 * 0.55 * Math.sqrt(70), 0.05);
+  assert.ok(Math.abs(x - 1) < 0.01);
+});
