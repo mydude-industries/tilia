@@ -736,8 +736,7 @@
   /* The blot comes folded: one tap opens the sheet on its fold (D17). Three drawings of
      the one blot (drawBlot caches it): the left half, the right half on the flap's face,
      and its ink faint through the flap's back. */
-  function renderBlotReveal(s, card) {
-    var open = !!turned[at];
+  function blotFold(open) {
     var fold = el("button", "fold" + (open ? " open" : ""));
     fold.type = "button";
     var inner = el("span", "sheet-in");
@@ -753,6 +752,16 @@
     inner.appendChild(left);
     inner.appendChild(flap);
     fold.appendChild(inner);
+    return fold;
+  }
+
+  function stillMotion() {
+    return !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  function renderBlotReveal(s, card) {
+    var open = !!turned[at];
+    var fold = blotFold(open);
     s.appendChild(fold);
 
     var tap = el("p", "hint lead", "Tap the sheet to open it.");
@@ -781,8 +790,7 @@
     fold.addEventListener("click", function () {
       open = turned[at] = true;
       show();
-      var still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-      setTimeout(function () { settled = true; show(); }, still ? 0 : 760);
+      setTimeout(function () { settled = true; show(); }, stillMotion() ? 0 : 760);
     });
     show();
   }
@@ -916,7 +924,10 @@
                   "Go back and shorten one of your answers, then send again.");
       return;
     }
-    var payload = C.buildPayload(launch, answers);
+    deliver(C.buildPayload(launch, answers));
+  }
+
+  function deliver(payload) {
     clearDraft();
     if (plain) {
       $bar.hidden = true;
@@ -930,6 +941,174 @@
       return;
     }
     tg.sendData(payload);
+  }
+
+  /* ---------- pick one and quick blot (rituals phase 1) ---------- */
+
+  /* Pick one: three cards face down, dealt from the entry's seed, so opening the page
+     again shows the same three (and the one they turned, from the draft). One tap turns
+     a card over; the other two step away; Tilia's line for it shows; Done sends it. */
+  var dealt = [];
+
+  function renderPick() {
+    $bar.hidden = true;
+    $sheet.textContent = "";
+    var chosen = dealt.indexOf(answers[0]) >= 0 ? answers[0] : null;
+    var s = el("div", "card pick");
+    s.appendChild(el("p", "label", "Pick one"));
+    var q = el("h1", "q pick-q", "Three cards, face down. Take the one you're drawn to.");
+    s.appendChild(q);
+    var row = el("div", "pick-row");
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", "Three cards, face down");
+    var buttons = dealt.map(function (id, n) {
+      var b = el("button", "tarot pick-card");
+      b.type = "button";
+      var faces = el("span", "faces");
+      var back = el("span", "face face-back");
+      back.appendChild(cardBack());
+      var front = el("span", "face face-front");
+      front.appendChild(cardImage("", id));
+      faces.appendChild(back);
+      faces.appendChild(front);
+      b.appendChild(faces);
+      b.addEventListener("click", function () { choose(id); });
+      row.appendChild(b);
+      return b;
+    });
+    s.appendChild(row);
+    var face = el("div", "pick-face");
+    var line = el("p", "pick-line");
+    face.appendChild(line);
+    var done = el("button", "next", "Done");
+    done.type = "button";
+    done.addEventListener("click", function () {
+      if (chosen) deliver(C.pickPayload(launch, chosen));
+    });
+    face.appendChild(done);
+    s.appendChild(face);
+
+    function show() {
+      row.classList.toggle("chosen", !!chosen);
+      buttons.forEach(function (b, n) {
+        var me = dealt[n] === chosen;
+        b.classList.toggle("flipped", me);
+        b.classList.toggle("passed", !!chosen && !me);
+        b.disabled = !!chosen;
+        if (me) b.setAttribute("aria-label", cardName(dealt[n]) || "Your card, face up");
+        else b.setAttribute("aria-label", "Card " + (n + 1) + " of 3, face down");
+        if (chosen && !me) b.setAttribute("aria-hidden", "true");
+      });
+    }
+    function reveal() {
+      var f = C.pickFace(deck, window.TiliaCardLines || {}, chosen);
+      q.textContent = f.name || "Your card";
+      line.textContent = f.line;
+      face.hidden = false;
+    }
+    function choose(id) {
+      if (chosen) return;
+      chosen = answers[0] = id;
+      saveDraft();
+      show();
+      setTimeout(reveal, stillMotion() ? 0 : 620);
+    }
+    face.hidden = true;
+    show();
+    if (chosen) reveal();  // opened again after turning one: it is still turned
+    $sheet.appendChild(s);
+  }
+
+  /* Quick blot: the blot, folded; one tap opens it; one question, their words, send. */
+  function renderQuick() {
+    $bar.hidden = true;
+    $sheet.textContent = "";
+    var open = !!answers[0];  // opened again with words in the box: already open
+    var settled = open;
+    var s = el("div", "card reveal quick");
+    s.appendChild(el("p", "label", "Quick blot"));
+    var fold = blotFold(open);
+    s.appendChild(fold);
+    var tap = el("p", "hint lead", "Tap the sheet to open it.");
+    s.appendChild(tap);
+    var ask = el("div", "quick-ask");
+    ask.appendChild(el("h1", "q", C.QUICK_PROMPT));
+    var box = el("textarea", "box");
+    box.rows = 3;
+    box.maxLength = C.QUICK_MAX;
+    box.value = answers[0] || "";
+    box.setAttribute("aria-label", C.QUICK_PROMPT);
+    box.placeholder = "Whatever it is, a few words is plenty.";
+    ask.appendChild(box);
+    var help = el("div", "help");
+    help.appendChild(helpToSee(NUDGES));
+    ask.appendChild(help);
+    s.appendChild(ask);
+    var go2 = el("button", "next", "Send to Tilia");
+    go2.type = "button";
+    go2.addEventListener("click", function () {
+      if (box.value.trim()) deliver(C.quickPayload(launch, box.value));
+    });
+    s.appendChild(go2);
+
+    function ready() {
+      var empty = !box.value.trim();
+      go2.disabled = empty;
+      go2.classList.toggle("skip", empty);
+    }
+    function show() {
+      fold.classList.toggle("open", open);
+      fold.classList.toggle("settled", open && settled);
+      fold.disabled = open;
+      fold.setAttribute("aria-label", open ? "An ink blot, mirrored down the middle"
+        : "A folded sheet with ink showing through. Tap to open it.");
+      tap.hidden = open;
+      ask.hidden = go2.hidden = !open;
+    }
+    box.addEventListener("input", function () {
+      answers[0] = box.value;
+      ready();
+      saveSoon();
+    });
+    fold.addEventListener("click", function () {
+      open = true;
+      show();
+      setTimeout(function () { settled = true; show(); }, stillMotion() ? 0 : 760);
+    });
+    ready();
+    show();
+    $sheet.appendChild(s);
+  }
+
+  // A pick or quick link: the sheet it is for, its seed, and for pick a deck of three.
+  function startMode(raw) {
+    var pick = launch.mode === "pick";
+    if (raw.type !== (pick ? "tarot" : "blot") || !(launch.seed >= 1)
+        || (!pick && !window.TiliaBlot)) {
+      showMessage("This link is missing a piece.", "Ask Tilia to send it again.");
+      return;
+    }
+    sheet = raw;
+    if (pick) {
+      dealt = C.dealPick(deck, launch.seed);
+      if (dealt.length < 3) {
+        showMessage("This link is missing a piece.", "Ask Tilia to send it again.");
+        return;
+      }
+    }
+    // The draft keeps the card they turned, or their words, under this entry's key.
+    asked = [{ id: launch.mode }];
+    answers = [pick ? null : ""];
+    document.title = (pick ? "Pick one" : "Quick blot") + " · Tilia";
+    loadDraft(function (d) {
+      var kept = d && Array.isArray(d.a) ? d.a[0] : null;
+      if (pick && dealt.indexOf(kept) >= 0) answers[0] = kept;
+      if (!pick && typeof kept === "string") answers[0] = kept.slice(0, C.QUICK_MAX);
+      if (pick) renderPick(); else renderQuick();
+      setTimeout(function () {
+        try { sweepDrafts(); } catch (e) { /* the sweep is housekeeping only */ }
+      }, 0);
+    });
   }
 
   /* ---------- device check (diag=1) ---------- */
@@ -1007,6 +1186,7 @@
           });
       })
       .then(function (raw) {
+        if (launch.mode) return startMode(raw);
         if (raw.type === "blot" && !(launch.seed >= 1 && window.TiliaBlot)) {
           showMessage("This link is missing a piece.", "Ask Tilia to send it again.");
           return;

@@ -1,6 +1,8 @@
 /* The candle page. A candle in a dark room, whatever the theme: the flame is the only light.
    Geometry other modules read: #candle is 60x190; the wax top is at bottom:120px and the
-   wick runs from bottom:118px to bottom:132px, centred. Keep these if you restyle. */
+   wick runs from bottom:118px to bottom:132px, centred. Keep these if you restyle.
+   Burn-down: candle.js sets --burnt (0 to 100px) on #candle as the hours pass; the wax,
+   the wick, the halo and the old CSS flame all come down by it (the flame re-measures). */
 
   :root {
     --room: #141416; --ink: #ece7da; --soft: #c9c3b4; --muted: #8c877b; --gold: #b48c3c; --rule: #2e2e33;
@@ -61,6 +63,9 @@
   .lead { color: var(--muted); font-size: 15px; line-height: 1.55; max-width: 30ch; margin: 0 auto; }
   /* lit: the words step back from the flame; out: they leave the room for the smoke */
   .lit .head { opacity: .55; }
+  /* their words leave the head's place to become the smoke that lights the wick */
+  .rising .head { opacity: 0; transition: opacity .5s ease-out; }
+  .rising #fx { display: block; }
   .out .head { opacity: 0; transform: translateY(-8px); pointer-events: none;
     transition: opacity 1.2s ease-out, transform 1.6s ease-out; }
 
@@ -83,7 +88,22 @@
   .tap:focus-visible { outline: 1px solid rgba(180, 140, 60, .7); outline-offset: 3px; }
   .tap.go { color: #e6d2a2; border-color: rgba(180, 140, 60, .4); background: rgba(180, 140, 60, .09); font-weight: 500; }
   .tap.go:active { background: rgba(180, 140, 60, .16); }
-  #mic, #again { margin-top: 24px; }
+  #mic, #again, #resend { margin-top: 24px; }
+
+  /* ---- what it's for: one line, typed or skipped */
+  .ask { position: relative; z-index: 1; max-width: 300px; margin: 0 auto; }
+  .ask-line { border: 1px solid #2e2e33; border-radius: 12px; background: rgba(20, 20, 22, .55);
+    transition: border-color .3s, box-shadow .3s; }
+  .ask-line:focus-within { border-color: rgba(180, 140, 60, .55); box-shadow: 0 0 18px rgba(180, 140, 60, .08); }
+  .ask-field { display: block; width: 100%; margin: 0; padding: 14px 16px; border: 0; background: transparent;
+    color: var(--ink); font: 16px/1.3 var(--sans); /* 16px keeps iOS from zooming */
+    caret-color: rgb(180, 140, 60); outline: none; -webkit-appearance: none; appearance: none; border-radius: 12px; }
+  .ask-field::placeholder { color: var(--muted); opacity: .8; font-style: italic; }
+  .ask .tap { margin-top: 12px; }
+  .ask-skip { display: block; margin: 10px auto 0; padding: 10px 14px; border: 0; background: none;
+    color: var(--muted); font: 14px/1.3 var(--sans); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .ask-skip:active { color: var(--soft); }
+  .ask-skip:focus-visible { outline: 1px solid rgba(180, 140, 60, .7); outline-offset: 3px; border-radius: 8px; }
   [hidden] { display: none !important; }
   .note { color: #6b675e; font: 11.5px/1.5 var(--sans); text-align: center; max-width: 34ch; margin: 40px auto 0;
     transition: opacity var(--warm); }
@@ -116,7 +136,7 @@
   .out .candle:before { transition: opacity var(--cool); }
 
   /* the flame's own halo around the wick; fades with the state, breathes inside */
-  .halo { position: absolute; left: 50%; bottom: -38px; width: 340px; height: 340px; margin-left: -170px;
+  .halo { position: absolute; left: 50%; bottom: calc(-38px - var(--burnt, 0px)); width: 340px; height: 340px; margin-left: -170px;
     pointer-events: none; opacity: 0; transition: opacity 1s ease-out; }
   .halo:before { content: ""; position: absolute; inset: 0;
     background: radial-gradient(closest-side, rgba(255, 196, 120, .17), rgba(255, 168, 80, .08) 30%,
@@ -126,14 +146,14 @@
   .lit .halo:before { animation-play-state: running; }
   .out .halo { transition: opacity 1.6s ease-out; }
 
-  .wick { position: absolute; left: 50%; bottom: 118px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px 1px 0 0;
+  .wick { position: absolute; left: 50%; bottom: calc(118px - var(--burnt, 0px)); width: 2px; height: 14px; margin-left: -1px; border-radius: 1px 1px 0 0;
     background: linear-gradient(to top, #6b5f52, #4a4038 55%, #2a2420); transform: rotate(5deg); transform-origin: 50% 100%;
     box-shadow: -.5px 0 0 rgba(236, 225, 205, .18); }
   .lit .wick, .out .wick { background: linear-gradient(to top, #4a4038, #1c1714 60%, #0e0b0a); box-shadow: none; }
 
   /* the wax: an ivory cylinder. Dark at both sides, a soft highlight left of centre,
      lit from above by the flame and darker toward the table. */
-  .wax { position: absolute; left: 9px; right: 9px; bottom: 0; height: 120px; border-radius: 3px 3px 5px 5px / 3px 3px 3px 3px;
+  .wax { position: absolute; left: 9px; right: 9px; bottom: 0; height: calc(120px - var(--burnt, 0px)); border-radius: 3px 3px 5px 5px / 3px 3px 3px 3px;
     background:
       linear-gradient(90deg, rgba(58, 38, 18, .5) 0, rgba(58, 38, 18, .16) 16%, rgba(58, 38, 18, 0) 32%,
         rgba(255, 252, 240, .22) 42%, rgba(255, 252, 240, 0) 56%, rgba(58, 38, 18, .1) 74%, rgba(40, 26, 12, .55) 100%),
@@ -162,15 +182,15 @@
   .out .rim:after { transition: opacity 1.2s ease-out; }
 
   /* drips: tongues of wax over the rim and down the side, rounded where they stopped */
-  .drip { position: absolute; left: 0; top: -2px; width: 6px; height: 31px; border-radius: 2px 3px 4px 4px / 2px 3px 6px 6px;
+  .drip { position: absolute; left: 0; top: -2px; width: 6px; height: min(31px, calc(116px - var(--burnt, 0px))); border-radius: 2px 3px 4px 4px / 2px 3px 6px 6px;
     background:
       linear-gradient(90deg, rgba(255, 250, 236, .3), rgba(255, 250, 236, 0) 45%, rgba(58, 38, 18, .3)),
       linear-gradient(180deg, #efe2c5, #e2d1ae 70%, #ebdcbd 88%, #d6c29b);
     box-shadow: 1px 1px 1px rgba(40, 26, 12, .3); }
-  .drip.two { left: auto; right: 6px; width: 5px; height: 15px; border-radius: 2px 2px 3px 3px / 2px 2px 5px 5px; }
+  .drip.two { left: auto; right: 6px; width: 5px; height: min(15px, calc(110px - var(--burnt, 0px))); border-radius: 2px 2px 3px 3px / 2px 2px 5px 5px; }
 
   /* the old CSS flame; the flame module draws its own and hides this, but it stays as a fallback */
-  .flame { position: absolute; left: 50%; bottom: 128px; width: 20px; height: 48px; margin-left: -10px; opacity: 0;
+  .flame { position: absolute; left: 50%; bottom: calc(128px - var(--burnt, 0px)); width: 20px; height: 48px; margin-left: -10px; opacity: 0;
     border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%; transform-origin: 50% 100%;
     background: radial-gradient(ellipse at 50% 85%, #fff8e0 0 12%, #ffd36a 30%, #ff9a2e 62%, rgba(255,120,30,0) 78%);
     box-shadow: 0 0 20px 7px rgba(255,170,60,.45), 0 0 70px 24px rgba(255,140,40,.18);

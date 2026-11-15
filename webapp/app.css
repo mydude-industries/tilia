@@ -395,6 +395,61 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   box-shadow: 0 0 0 1px rgba(var(--shade), calc(0.08 * var(--lift))), 0 1px 2px rgba(var(--shade), calc(0.06 * var(--lift)));
 }
 
+/* ---------- pick one (rituals phase 1) ---------- */
+
+/* Three cards face down in a row. The one they take turns over and steps forward; the
+   other two step away. Calm and quick: about half a second, and none with reduced motion. */
+.pick .label { text-align: center; }
+.pick-q { font-size: 24px; line-height: 1.3; text-align: center; text-wrap: balance; }
+.pick-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 12px;
+  margin: var(--s5) 0 0;
+}
+.tarot.pick-card {
+  width: auto;
+  flex: 0 1 31%;
+  max-width: 150px;
+  margin: 0;
+  transition: flex-basis 460ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    max-width 460ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 260ms ease-out, margin 460ms ease-out;
+}
+.pick-card .faces { transition-duration: 560ms; }
+.pick-row.chosen .pick-card.flipped { flex-basis: 66%; max-width: 250px; }
+.pick-row.chosen .pick-card.passed {
+  flex-basis: 0;
+  max-width: 0;
+  margin: 0 -6px;   /* with the row's gap, a card that stepped away takes no room */
+  opacity: 0;
+  pointer-events: none;
+}
+.pick-face { display: flex; flex: 1; flex-direction: column; animation: arrive 240ms ease-out; }
+.pick-line {
+  margin: var(--s4) 0 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.4;
+  text-align: center;
+  text-wrap: pretty;
+  color: var(--ink-soft);
+}
+.pick-face .next { margin-top: auto; }
+.pick-line { margin-bottom: var(--s5); }
+@media (prefers-reduced-motion: reduce) {
+  .tarot.pick-card, .pick-card .faces { transition: none; }
+  .pick-face { animation: none; }
+}
+
+/* ---------- quick blot ---------- */
+
+.quick .fold { width: min(100%, 40vh); }
+.quick-ask { display: flex; flex-direction: column; margin-top: var(--s4); }
+.quick-ask .box { min-height: 96px; margin-top: var(--s3); }
+.next:disabled { cursor: default; }
+.next.skip:disabled { opacity: 0.7; }
+
 /* ---------- before the reveal (D17) ---------- */
 
 /* The pitch's hero: the card back, the spread face down, or the folded blot, so the

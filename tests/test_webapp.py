@@ -39,7 +39,10 @@ def test_index_has_csp_and_relative_scripts():
     assert ('<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; img-src \'self\' '
             'data:; style-src \'self\' \'unsafe-inline\'; script-src \'self\'">') in html
     srcs = re.findall(r'<script[^>]*\bsrc="([^"]+)"', html)
-    assert srcs == ["vendor/telegram-web-app.js", "core.js", "blot.js", "flourish.js", "app.js"]
+    assert [s.split("?v=")[0] for s in srcs] == ["vendor/telegram-web-app.js", "core.js",
+                                                 "blot.js", "flourish.js", "card-lines.js",
+                                                 "app.js"]
+    assert all(re.fullmatch(r"[a-z/.-]+(\?v=\d+)?", s) for s in srcs)
     assert "<script>" not in html  # CSP forbids inline scripts
 
 

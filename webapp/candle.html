@@ -8,16 +8,16 @@
 <meta name="robots" content="noindex">
 <title>Tilia · candle</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="candle.css?v=8">
+<link rel="stylesheet" href="candle.css?v=10">
 <link rel="stylesheet" href="candle-follow.css?v=8">
 </head>
 <body>
 <main id="main">
   <div class="room" aria-hidden="true"><i class="glow"></i><i class="grain"></i></div>
   <div class="head" id="head">
-    <p class="kicker">A small ritual</p>
-    <h1 id="title">Before the hard thing</h1>
-    <p class="lead" id="lead">Light it, take one breath, and go. Come back and blow it out when you're done.</p>
+    <p class="kicker" id="kicker">A small ritual</p>
+    <h1 id="title">What's this candle for?</h1>
+    <p class="lead" id="lead">A few words, if you like. Then light it, and come back to blow it out when it's done.</p>
   </div>
   <canvas id="fx" aria-hidden="true"></canvas>
   <p class="sr" id="after" aria-live="polite"></p>
@@ -29,7 +29,15 @@
     <div class="wax"><div class="rim"></div><div class="drip"></div><div class="drip two"></div></div>
   </div>
 
-  <p class="say" id="say">Tap the wick to light it.</p>
+  <p class="say" id="say"></p>
+  <form class="ask" id="ask" autocomplete="off" hidden>
+    <div class="ask-line">
+      <input class="ask-field" id="field" type="text" maxlength="60" enterkeyhint="go"
+        autocapitalize="sentences" placeholder="The call, the talk, the day…" aria-label="What's this candle for?">
+    </div>
+    <button type="submit" class="tap go" id="light">Light it</button>
+    <button type="button" class="ask-skip" id="skip">Skip, just light it</button>
+  </form>
   <p class="quiet" id="hint"></p>
   <div class="meter" id="meter" hidden><i id="bar"></i></div>
 
@@ -37,13 +45,15 @@
   <div class="follow" id="follow" hidden></div>
   <button type="button" class="tap" id="again" hidden>Light it again</button>
   <button type="button" class="tap go" id="done" hidden>Done</button>
+  <button type="button" class="tap go" id="resend" hidden>Send it again</button>
 
-  <p class="note">The microphone is only used to notice a breath. Nothing is recorded or sent anywhere.</p>
+  <p class="note">The microphone only listens for your breath, here on the phone. Nothing is recorded or sent anywhere.</p>
 </main>
 <script src="vendor/telegram-web-app.js"></script>
-<script src="candle-flame.js?v=8"></script>
-<script src="candle-smoke.js?v=8"></script>
+<script src="candle-core.js?v=10"></script>
+<script src="candle-flame.js?v=9"></script>
+<script src="candle-smoke.js?v=9"></script>
 <script src="candle-follow.js?v=8"></script>
-<script src="candle.js?v=8"></script>
+<script src="candle.js?v=10"></script>
 </body>
 </html>

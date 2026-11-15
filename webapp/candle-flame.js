@@ -1,7 +1,12 @@
 // The flame. Owned by the flame module: candle.js only calls CandleFlame.init(candleEl),
-// CandleFlame.setState("unlit" | "lit" | "out") and CandleFlame.setBreath(lean, squash),
-// where lean is 0..55 (degrees away from the breath; positive bends the flame to the left)
-// and squash is 1 (none) down to 0.35.
+// CandleFlame.setState("unlit" | "lit" | "out", already), CandleFlame.setBreath(lean, squash),
+// CandleFlame.setCalm(c) and CandleFlame.setBurn(f). lean is 0..55 (degrees away from the
+// breath; positive bends the flame to the left) and squash is 1 (none) down to 0.35.
+// `already`: a candle lit earlier and reopened burns at once, with no spark.
+// c is how calm the breathing sounds, 0..1: 0.5 (the default) is the flame as it always
+// was; toward 1 it steadies, toward 0 it flickers. It eases over a couple of seconds.
+// f is how far it has burned, 0..1: the wax has been shortened (candle.css --burnt), so
+// the flame re-finds the wick; in the last tenth it gutters down to a small low flame.
 //
 // Drawn on one small canvas laid over the wick. The flame is a bent spine with a teardrop
 // width profile; soft pre-rendered discs are stamped along it in layers (blue cup, orange
@@ -18,6 +23,7 @@ window.CandleFlame = (function () {
   var state = "unlit", running = false, last = 0, T = 0;
   var litAt = 0, outAt = 0;
   var leanT = 0, squashT = 1, lean = 0, squash = 1, outDir = 1;
+  var calmT = 0.5, calm = 0.5, burn = 0, host = null;
   var sparks = [];
   var spr = {};
 
@@ -90,6 +96,7 @@ window.CandleFlame = (function () {
     candleEl.appendChild(cv);
     ctx = cv.getContext("2d");
     makeSprites();
+    host = candleEl;
     measure(candleEl);
     window.addEventListener("resize", function () { measure(candleEl); });
   }
@@ -99,13 +106,17 @@ window.CandleFlame = (function () {
   // grow: 0..~1.1 (lighting), fade: 1..0 (going out); bend: extra radians at the tip
   function drawFlame(grow, fade, bend, jitter) {
     var wind = clamp(lean / 55, 0, 1), sq = squash;
-    var gut = sstep(0.68, 0.9, vn(T * 0.33 + 100));                 // an occasional gutter
-    var h = 47 * (1 + 0.075 * fbm(T * 1.05) + 0.025 * Math.sin(T * 12.7 + 3 * vn(T)) - 0.13 * gut
-                  + 0.12 * wind * fbm(T * 13 + 7) + jitter);
-    h *= (0.32 + 0.68 * sq) * grow;
-    var R = 7.2 * (1 + 0.045 * fbm(T * 1.7 + 30)) * (1 + (1 - sq) * 0.6) * Math.pow(clamp(grow, 0, 1.2), 0.55);
+    // unsteady: 1 at the default calm of 0.5 (the flame as it always was), 0.25 when the
+    // breathing is slow and even, 1.75 when it's quick or uneven
+    var un = 1 + 1.5 * (0.5 - calm), low = sstep(0.9, 1, burn);
+    var fast = Math.max(0, un - 1) / 0.75;                          // 0 down to calm 0.5, 1 at calm 0: a quicker flicker
+    var gut = sstep(0.68 + 0.12 * (1 - un), 0.9, vn(T * 0.33 + 100)) * Math.min(1.3, un); // an occasional gutter
+    var h = 47 * (1 + un * (0.075 * fbm(T * 1.05) + 0.025 * Math.sin(T * 12.7 + 3 * vn(T))) - 0.13 * gut
+                  + 0.12 * wind * fbm(T * 13 + 7) + 0.22 * fast * fbm(T * 8.5 + 50) + jitter);
+    h *= (0.32 + 0.68 * sq) * grow * (1 + 0.05 * (calm - 0.5)) * (1 - 0.62 * low);
+    var R = 7.2 * (1 - 0.35 * low) * (1 + 0.045 * fbm(T * 1.7 + 30)) * (1 + (1 - sq) * 0.6) * Math.pow(clamp(grow, 0, 1.2), 0.55);
     var bright = clamp(1 + 0.07 * fbm(T * 2.2 + 3) - 0.1 * gut + (1 - sq) * 0.35, 0.6, 1.45) * fade;
-    var sway = 0.07 * fbm(T * 0.45 + 5) + 0.16 * gut * fbm(T * 4.2 + 9);
+    var sway = 0.07 * un * fbm(T * 0.45 + 5) + 0.16 * gut * fbm(T * 4.2 + 9) + 0.2 * fast * fbm(T * 6.3 + 21);
     var ripA = 0.045 + 0.22 * gut + 0.3 * wind, ripF = 10 + 8 * wind;
     var a = lean * Math.PI / 180 + bend;
     if (h < 0.3) return 0;
@@ -215,6 +226,7 @@ window.CandleFlame = (function () {
   function frame(ts) {
     var dt = last ? Math.min(0.05, (ts - last) / 1000) : 0.016;
     last = ts; T += dt;
+    calm += (calmT - calm) * (1 - Math.exp(-dt / 2));             // eases over ~2 s
     var e = 1 - Math.exp(-dt * 14);
     lean += (leanT - lean) * e;
     squash += (squashT - squash) * e;
@@ -243,7 +255,7 @@ window.CandleFlame = (function () {
       }
       var lvl = grow > 0 ? drawFlame(grow, 1, 0, 0) : 0;
       drawWaxLight(lvl * Math.min(1, grow));
-      drawEmber(0.4 * sstep(0.3, 1, grow), 0);          // the wick tip glowing inside the flame
+      drawEmber((0.4 + 0.5 * sstep(0.9, 1, burn)) * sstep(0.3, 1, grow), 0);  // the wick tip glowing inside the flame
     } else if (state === "out") {
       var O = ts - outAt;
       var c = clamp(O / 250, 0, 1);
@@ -270,9 +282,11 @@ window.CandleFlame = (function () {
     requestAnimationFrame(frame);
   }
 
-  function setState(s) {
+  function setState(s, already) {
     var t = performance.now();
-    if (s === "lit" && state !== "lit") {
+    if (s === "lit" && state !== "lit" && already) {
+      litAt = t - 2000; sparks.length = 0;                 // burning already: no spark, full height
+    } else if (s === "lit" && state !== "lit") {
       litAt = t; sparks.length = 0;
       for (var i = 0; i < 6; i++) {
         var ang = (Math.random() - 0.5) * 1.9, sp = 45 + Math.random() * 70;
@@ -294,5 +308,15 @@ window.CandleFlame = (function () {
     squashT = clamp(s === undefined ? 1 : +s, 0.35, 1);
   }
 
-  return { init: init, setState: setState, setBreath: setBreath };
+  function setCalm(c) {
+    c = +c;
+    calmT = isFinite(c) ? clamp(c, 0, 1) : 0.5;
+  }
+  function setBurn(f) {
+    f = +f;
+    burn = isFinite(f) ? clamp(f, 0, 1) : 0;
+    if (host) measure(host);                             // the wick sits lower on shorter wax
+  }
+
+  return { init: init, setState: setState, setBreath: setBreath, setCalm: setCalm, setBurn: setBurn };
 })();

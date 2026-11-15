@@ -17,6 +17,12 @@
   var STARTER_WORDS = 4;
   var ELLIPSIS = "\u2026";
 
+  var MODES = ["pick", "quick"];
+  var PICK_N = 3;
+  var QUICK_MAX = 300;  // the blot sheet's "what do you see first" card
+  var QUICK_PROMPT = "What's the first thing you see?";
+  var PICK_FALLBACK = "Take a moment with it. Notice what catches your eye first.";
+
   function intOrNull(s) {
     return s !== null && /^\d+$/.test(s) ? parseInt(s, 10) : null;
   }
@@ -54,6 +60,9 @@
       seed: intOrNull(q.get("seed")),
       lang: q.get("lang") || "en",
       diag: q.get("diag") === "1",
+      // How a proactive offer shows the page (rituals phase 1): "pick" one of three face-down
+      // cards, or a "quick" one-question blot. Anything else is the full sheet.
+      mode: MODES.indexOf(q.get("mode")) >= 0 ? q.get("mode") : null,
       wording: decodeWording(frag.get("tw")),
     };
   }
@@ -242,7 +251,62 @@
     });
   }
 
+  /* ---------- pick one and quick blot ---------- */
+
+  // mulberry32: small, fast and the same on every engine.
+  function mulberry32(a) {
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* Pick one: three cards dealt face down from the entry's seed, so opening the page
+     again deals the same three. `deck` is the manifest (its order); the back and
+     anything without a plain id are left out. Fewer than three only from a short deck. */
+  function dealPick(deck, seed) {
+    var pool = (Array.isArray(deck) ? deck : []).map(function (e) {
+      return e && typeof e.id === "string" && /^[a-z0-9-]+$/.test(e.id) && e.id !== "card-back"
+        ? e.id : null;
+    }).filter(Boolean);
+    var rnd = mulberry32(((seed >>> 0) ^ 0x51C4) >>> 0);
+    var out = [];
+    while (out.length < PICK_N && pool.length) {
+      out.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+    }
+    return out;
+  }
+
+  // The chosen card's face: its name from the deck and Tilia's line for it.
+  function pickFace(deck, lines, id) {
+    var info = null;
+    (deck || []).forEach(function (e) { if (e && e.id === id) info = e; });
+    var line = lines && Object.prototype.hasOwnProperty.call(lines, id) ? lines[id] : null;
+    return {
+      id: id,
+      name: info && typeof info.name === "string" ? info.name : "",
+      line: typeof line === "string" && line ? line : PICK_FALLBACK,
+    };
+  }
+
+  function pickPayload(launch, card) {
+    return JSON.stringify({ v: 1, type: launch.type, id: launch.id, mode: "pick", card: card });
+  }
+
+  function quickPayload(launch, answer) {
+    var a = Array.from(String(answer || "").trim()).slice(0, QUICK_MAX).join("");
+    return JSON.stringify({ v: 1, type: launch.type, id: launch.id, mode: "quick", answer: a });
+  }
+
   return {
+    QUICK_MAX: QUICK_MAX,
+    QUICK_PROMPT: QUICK_PROMPT,
+    dealPick: dealPick,
+    pickFace: pickFace,
+    pickPayload: pickPayload,
+    quickPayload: quickPayload,
     PAYLOAD_MAX: PAYLOAD_MAX,
     WORDING_MAX: WORDING_MAX,
     parseLaunch: parseLaunch,

@@ -1,6 +1,8 @@
 // The smoke that becomes the follow-up. Owned by the smoke module: candle.js only calls
-// CandleSmoke.init(canvas, main, candle), CandleSmoke.morph([small, big], onReady) and
-// CandleSmoke.clear().
+// CandleSmoke.init(canvas, main, candle), CandleSmoke.morph([small, big], onReady),
+// CandleSmoke.rise(text, onDone) and CandleSmoke.clear().
+// rise is the morph run backwards: their words come apart into motes that drift down and
+// gather into the wick, and onDone (lighting it) runs as the last of them arrive.
 "use strict";
 
 window.CandleSmoke = (function () {
@@ -12,7 +14,9 @@ window.CandleSmoke = (function () {
   // the same left-to-right wave. The words keep a faint warmth.
   var fx, gfx, main, candle, wick, anim = null;
   var SERIF = '500 30px "New York", ui-serif, "Iowan Old Style", Charter, Georgia, serif';
-  var SANS = '600 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  var SANS_FACE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  var SERIF_FACE = '"New York", ui-serif, "Iowan Old Style", Charter, Georgia, serif';
+  var SANS = "600 13px " + SANS_FACE;
   var MAXP = 1100, MAXT = 960;             // particles in all; at most this many become letters
   var EMIT = 1550;                          // ms the wick keeps smoking
   var CAP0 = 1300, CAPW = 1300;             // the gathering wave: first start, spread across the words
@@ -100,6 +104,46 @@ window.CandleSmoke = (function () {
     return [c.left + c.width / 2 - m.left, c.bottom - 132 - m.top];
   }
 
+  // ---- fitting words to the width: a smaller size first, then a cut with an ellipsis ----
+  var meas = null;
+  function widthOf(text, font, spacing) {
+    meas = meas || document.createElement("canvas").getContext("2d");
+    meas.font = font;
+    return meas.measureText(text).width + (parseFloat(spacing) || 0) * Array.from(text).length;
+  }
+  function fitSans(text, maxW) {
+    var px = 13, spacing = "2px";
+    while (widthOf(text, "600 " + px + "px " + SANS_FACE, spacing) > maxW) {
+      if (spacing !== "0px") spacing = parseFloat(spacing) > 1 ? "1px" : "0px";
+      else if (px > 10) px -= 0.5;
+      else break;
+    }
+    var font = "600 " + px + "px " + SANS_FACE;
+    if (widthOf(text, font, spacing) <= maxW) return { text: text, font: font, spacing: spacing };
+    var chars = Array.from(text);                                   // only when even the smallest won't fit
+    while (chars.length > 1 && widthOf(chars.join("") + "\u2026", font, spacing) > maxW) chars.pop();
+    return { text: chars.join("").trim() + "\u2026", font: font, spacing: spacing };
+  }
+  // their words, in the serif: one line if it fits at a readable size, else two
+  function fitSerif(text, maxW) {
+    for (var px = 30; px >= 19; px -= 1) {
+      var f = "500 " + px + "px " + SERIF_FACE;
+      if (widthOf(text, f) <= maxW) return { font: f, lines: [text], px: px };
+    }
+    var words = text.split(" "), best = null;
+    for (var k = 1; k < words.length; k++) {
+      var a = words.slice(0, k).join(" "), b = words.slice(k).join(" ");
+      var m = Math.max(a.length, b.length);
+      if (!best || m < best.m) best = { m: m, lines: [a, b] };
+    }
+    var lines = best ? best.lines : [text];
+    for (px = 26; px >= 14; px -= 1) {
+      f = "500 " + px + "px " + SERIF_FACE;
+      if (lines.every(function (ln) { return widthOf(ln, f) <= maxW; })) return { font: f, lines: lines, px: px };
+    }
+    return { font: "500 14px " + SERIF_FACE, lines: lines, px: 14 };
+  }
+
   function morph(lines, onReady) {
     clear();
     newAir();
@@ -109,7 +153,8 @@ window.CandleSmoke = (function () {
     var W = Math.round(mr.width), H = Math.max(180, Math.round(tip[1] + 26));
     fx.width = Math.round(W * dpr); fx.height = Math.round(H * dpr); fx.style.height = H + "px";
     var ty = Math.max(80, tip[1] * 0.55);
-    var L = [{ text: lines[0], font: SANS, y: ty - 36, spacing: "2px" }, { text: lines[1], font: SERIF, y: ty }];
+    var small = fitSans(lines[0], W - 24);                                 // their own words can be long
+    var L = [{ text: small.text, font: small.font, y: ty - 36, spacing: small.spacing }, { text: lines[1], font: SERIF, y: ty }];
     var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     if (calm) {                                                         // no drifting particles: the words just arrive
@@ -306,6 +351,119 @@ window.CandleSmoke = (function () {
     anim = requestAnimationFrame(frame);
   }
 
+  // ---- rise: the morph backwards. The words come apart, left to right, into motes that
+  // warm as they fall and gather into the wick along soft curves; the air still moves
+  // them a little, less the closer they get, so every one arrives.
+  function rise(text, onDone) {
+    clear();
+    newAir();
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var mr = main.getBoundingClientRect();
+    var tip = tipNow();
+    var W = Math.round(mr.width), H = Math.max(180, Math.round(tip[1] + 26));
+    fx.width = Math.round(W * dpr); fx.height = Math.round(H * dpr); fx.style.height = H + "px";
+    var ty = Math.max(80, tip[1] * 0.55);
+    var fit = fitSerif(text, W - 32), gap = fit.px * 1.3;
+    var L = fit.lines.map(function (ln, k) {
+      return { text: ln, font: fit.font, y: ty - (fit.lines.length - 1) * gap / 2 + k * gap };
+    });
+    var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function drawWords(g, a) {
+      g.textAlign = "center"; g.textBaseline = "middle"; g.globalAlpha = a;
+      g.shadowColor = "rgba(255,168,64,0.2)"; g.shadowBlur = 7; g.fillStyle = "#ece7da";
+      L.forEach(function (ln) { g.font = ln.font; g.fillText(ln.text, W / 2, ln.y); });
+      g.shadowBlur = 0; g.shadowColor = "transparent"; g.globalAlpha = 1;
+    }
+    if (calm) {                                                         // no drifting: the words fade, then it lights
+      var c0 = null;
+      anim = requestAnimationFrame(function still(now) {
+        if (c0 === null) c0 = now;
+        var a = 1 - clamp01((now - c0 - 500) / 700);
+        gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
+        drawWords(gfx, a);
+        if (a <= 0) { anim = null; if (onDone) { var d = onDone; onDone = null; d(); } return; }
+        anim = requestAnimationFrame(still);
+      });
+      return;
+    }
+
+    var pts = textPoints(W, H, L, dpr), n = pts.length;
+    var HOLD = 650, SPREAD = 900, TRAVEL = 1250;                       // words show, come apart, fall
+    var P = pts.map(function (q, i) {
+      var r = n > 1 ? i / (n - 1) : 0;
+      return {
+        x0: q.x, y0: q.y, x: q.x, y: q.y, go: HOLD + r * SPREAD + Math.random() * 120,
+        dur: TRAVEL * (0.85 + Math.random() * 0.3), side: (Math.random() - 0.5) * 70,
+        ph: Math.random() * 6.283, done: false
+      };
+    });
+    var END_AT = HOLD + SPREAD + 120 + TRAVEL * 1.15;
+    // the crisp words are hidden in the same left-to-right wave the motes leave in
+    var tc = document.createElement("canvas"); tc.width = fx.width; tc.height = fx.height;
+    var tgc = tc.getContext("2d");
+    var x0 = 1e9, x1 = -1e9;
+    pts.forEach(function (q) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; });
+    var t0 = null, fired = false;
+
+    function frame(now) {
+      if (t0 === null) t0 = now;
+      var t = now - t0, tip = tipNow(), ts = t / 1000, i, p;
+      gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
+
+      // the words, wiped away left to right as their motes leave
+      if (t < HOLD + SPREAD + 500 && n) {
+        tgc.setTransform(dpr, 0, 0, dpr, 0, 0); tgc.clearRect(0, 0, W, H);
+        drawWords(tgc, smooth(0, 260, t));
+        tgc.globalCompositeOperation = "destination-out";
+        var gr = tgc.createLinearGradient(x0 - 2, 0, x1 + 2, 0);
+        for (var k = 0; k <= 12; k++) {
+          var gone = smooth(0, 380, t - (HOLD + (k / 12) * SPREAD) + 60);
+          gr.addColorStop(k / 12, "rgba(0,0,0," + gone.toFixed(3) + ")");
+        }
+        tgc.fillStyle = gr; tgc.fillRect(0, 0, W, H);
+        tgc.globalCompositeOperation = "source-over";
+        gfx.setTransform(1, 0, 0, 1, 0, 0); gfx.drawImage(tc, 0, 0);
+        gfx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      // the motes: off the letters, down a soft curve into the wick
+      var left = 0;
+      gfx.globalCompositeOperation = "lighter";
+      for (i = 0; i < P.length; i++) {
+        p = P[i];
+        var g = t - p.go;
+        if (g < 0) { left++; continue; }
+        var u = clamp01(g / p.dur);
+        if (u >= 1) { p.done = true; continue; }
+        left++;
+        var e = u * u * (3 - 2 * u);
+        var cx = p.x0 + (tip[0] - p.x0) * 0.25 + p.side, cy = p.y0 + (tip[1] - p.y0) * 0.35;
+        var bx = (1 - e) * (1 - e) * p.x0 + 2 * (1 - e) * e * cx + e * e * tip[0];
+        var by = (1 - e) * (1 - e) * p.y0 + 2 * (1 - e) * e * cy + e * e * (tip[1] - 1);
+        swirl(bx, by, ts);
+        var loose = Math.sin(Math.PI * e) * 0.06;                    // the air moves them mid-way only
+        p.x = bx + air[0] * loose + Math.sin(t * 0.004 + p.ph) * 1.5 * (1 - e);
+        p.y = by + air[1] * loose;
+        var warm = smooth(0.15, 0.85, e);
+        var size = 4.2 - 2.2 * e;
+        gfx.globalAlpha = (0.5 - 0.2 * warm) * (1 - smooth(0.9, 1, u));
+        gfx.drawImage(warm > 0.5 ? EMBER : INK, p.x - size / 2, p.y - size / 2, size, size);
+        if (warm > 0.05) {
+          gfx.globalAlpha = 0.35 * warm * (1 - smooth(0.92, 1, u));
+          gfx.drawImage(EMBER, p.x - size, p.y - size, size * 2, size * 2);
+        }
+      }
+      gfx.globalCompositeOperation = "source-over"; gfx.globalAlpha = 1;
+      if (!fired && (t > END_AT - 220 || (t > HOLD + SPREAD && left < n * 0.04))) {
+        fired = true;
+        if (onDone) { var d = onDone; onDone = null; d(); }
+      }
+      if (left > 0 || t < END_AT) anim = requestAnimationFrame(frame);
+      else { anim = null; gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H); }
+    }
+    anim = requestAnimationFrame(frame);
+  }
+
   function clear() {
     if (anim) { cancelAnimationFrame(anim); anim = null; }
     if (gfx) {
@@ -319,5 +477,5 @@ window.CandleSmoke = (function () {
     wick = candle.querySelector(".wick");
   }
 
-  return { init: init, morph: morph, clear: clear };
+  return { init: init, morph: morph, rise: rise, clear: clear };
 })();
