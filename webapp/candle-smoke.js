@@ -21,6 +21,7 @@ window.CandleSmoke = (function () {
   var SANS = "600 13px " + SANS_FACE;
   var MAXP = 1100, MAXT = 960;             // particles in all; at most this many become letters
   var EMIT = 1550;                          // ms the wick keeps smoking
+  var RISE_PACE = 1.8;                      // the words→flame rise runs this many times slower than real time
   var CAP0 = 1300, CAPW = 1300;             // the gathering wave: first start, spread across the words
   var REVEAL = 1300, REVEAL_FADE = 520;     // crisp text shows this long after a spot starts gathering
   var READY = 3800, END = 4900;
