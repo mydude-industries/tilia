@@ -451,7 +451,9 @@ window.CandleSmoke = (function () {
 
     function frame(now) {
       if (t0 === null) { t0 = now; last = now; }
-      var t = now - t0, raw = Math.min(0.066, Math.max(0.001, (now - last) / 1000)); last = now;
+      // RISE_PACE slows the whole rise evenly (the owner: "too fast"); physics and timeline
+      // scale together, so the motion keeps its shape, only slower.
+      var t = (now - t0) / RISE_PACE, raw = Math.min(0.066, Math.max(0.001, (now - last) / 1000)) / RISE_PACE; last = now;
       var tip = tipNow(), i, p;
       gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
 
