@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://127.0.0.1:* http://localhost:*">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex">
 <title>Tilia · candle</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="candle.css?v=12">
-<link rel="stylesheet" href="candle-follow.css?v=8">
+<link rel="stylesheet" href="candle.css?v=13">
+<link rel="stylesheet" href="candle-follow.css?v=9">
 </head>
 <body>
 <main id="main">
@@ -17,7 +17,7 @@
   <div class="head" id="head">
     <p class="kicker" id="kicker">A small ritual</p>
     <h1 id="title">What's this candle for?</h1>
-    <p class="lead" id="lead">A few words, if you like. Then light it, and come back to blow it out when it's done.</p>
+    <p class="lead" id="lead">A few words for it. Then light it, and come back to blow it out when it's done.</p>
   </div>
   <canvas id="fx" aria-hidden="true"></canvas>
   <p class="sr" id="after" aria-live="polite"></p>
@@ -109,8 +109,7 @@
       <input class="ask-field" id="field" type="text" maxlength="60" enterkeyhint="go"
         autocapitalize="sentences" placeholder="The call, the talk, the day…" aria-label="What's this candle for?">
     </div>
-    <button type="submit" class="tap go" id="light">Light it</button>
-    <button type="button" class="ask-skip" id="skip">Skip, just light it</button>
+    <button type="submit" class="tap go" id="light" disabled>Light it</button>
   </form>
   <p class="quiet" id="hint"></p>
   <div class="meter" id="meter" hidden><i id="bar"></i></div>
@@ -124,10 +123,12 @@
   <p class="note">The microphone only listens for your breath, here on the phone. Nothing is recorded or sent anywhere.</p>
 </main>
 <script src="vendor/telegram-web-app.js"></script>
-<script src="candle-core.js?v=11"></script>
+<script src="candle-core.js?v=14"></script>
 <script src="candle-flame.js?v=10"></script>
-<script src="candle-smoke.js?v=12"></script>
-<script src="candle-follow.js?v=8"></script>
-<script src="candle.js?v=11"></script>
+<script src="candle-smoke.js?v=14"></script>
+<script src="candle-seal.js?v=1"></script>
+<script src="candle-voice.js?v=3"></script>
+<script src="candle-follow.js?v=10"></script>
+<script src="candle.js?v=15"></script>
 </body>
 </html>

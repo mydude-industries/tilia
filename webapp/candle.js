@@ -7,10 +7,16 @@
 // asked first, the lit time and those words are kept in Telegram CloudStorage under
 // candle_<token> (the button reopens the lit candle, burned down by the time away), and
 // only blowing it out sends anything back: sendData({type:"candle", intention, lit_at,
-// out_at, answer}), which closes the page. Before sending, the record becomes a pending
+// out_at, answer, now, later}), which closes the page. Before sending, the record becomes a pending
 // one holding the answer, so an answer is never lost: reopened, the page offers "Send it
 // again" (Tilia takes a second copy as already answered). Opened without an entry (the
 // preview) it keeps nothing and sends nothing.
+// Once lit, if the button names a relay (relay, mac, k), their words are sealed for the
+// owner's Mac only and Tilia's line comes back in the smoke (candle-voice.js); without
+// those params, or with no answer in 30 s, the candle is as it always was. The voice runs
+// only inside Telegram, or with a relay on this machine (a dev run); never otherwise.
+// At blow-out the smoke spells their words, then the line Tilia sealed for this moment
+// (if it came), and one optional field asks "Anything to tell Tilia?" before Done.
 "use strict";
 
 (function () {
@@ -25,7 +31,7 @@
       done = document.getElementById("done"), candle = document.getElementById("candle"),
       after = document.getElementById("after"), follow = document.getElementById("follow"),
       ask = document.getElementById("ask"), field = document.getElementById("field"),
-      skip = document.getElementById("skip"), title = document.getElementById("title"),
+      lightBtn = document.getElementById("light"), title = document.getElementById("title"),
       lead = document.getElementById("lead"), resendBtn = document.getElementById("resend");
   var timers = [], burnTimer = null;
   CandleFlame.init(candle);
@@ -35,7 +41,14 @@
   var state = "loading";   // loading | unlit | rising | lit | out | sent
   var sent = null;         // the answered candle, as restore() gives it, to send again
   var micOn = false, loud = 0;
-  var lit = null, outAt = 0;  // lit: { litAt, intention }
+  // lit: { litAt, intention, now, later, spelled }: now, Tilia's line once the smoke spelled
+  // it; later, her line kept for blow-out; spelled, the later line blow-out really spelled.
+  // Only spelled lines go back: the Mac counts a line as seen only when the page echoes it.
+  var lit = null, outAt = 0;
+  // Tilia's voice: only from a button that names a relay (else the candle is as it was)
+  var voice = launch.entry && window.CandleVoice ? CandleVoice.params(location.search) : null;
+  if (voice && !CandleVoice.mayAsk(voice, !plain)) voice = null;   // R8: Telegram, or a dev relay
+  var askSeq = 0, stopWisp = null;
 
   // Telegram-only setup; a plain browser skips every call.
   if (tg) {
@@ -83,7 +96,7 @@
 
   function saveLit() {
     if (!key) return;
-    var v = K.litValue(lit.litAt, lit.intention);
+    var v = K.litValue(lit.litAt, lit.intention, lit.later, lit.now);
     local.set(key, v);                       // both: a cloud save that fails still leaves this
     if (useCloud) cloud("setItem", [key, v], function () {});
   }
@@ -102,7 +115,7 @@
   // the answer replaces the lit record before it is sent (cb once saved, or after 1 s)
   function savePending(answer, cb) {
     if (!key) return cb();
-    var v = K.pendingValue(lit.litAt, lit.intention, outAt, answer);
+    var v = K.pendingValue(lit.litAt, lit.intention, outAt, answer, { now: lit.now, later: lit.spelled });
     local.set(key, v);
     if (!useCloud) return cb();
     var settled = false;
@@ -133,6 +146,8 @@
 
   function clearOut() {
     timers.forEach(clearTimeout); timers = [];
+    askSeq++; stopWisp = null;
+    main.classList.remove("speaking");
     CandleSmoke.clear();
     after.textContent = "";
     CandleFollow.reset();
@@ -155,10 +170,11 @@
     CandleFlame.setBurn(0);
     main.classList.remove("lit", "out", "rising");
     title.textContent = "What's this candle for?";
-    lead.textContent = "A few words, if you like. Then light it, and come back to blow it out when it's done.";
+    lead.textContent = "A few words for it. Then light it, and come back to blow it out when it's done.";
     say.textContent = "";
     hint.textContent = "";
     field.value = "";
+    lightBtn.disabled = true;
     show(ask, true); show(micBtn, false); show(meter, false); show(again, false); show(done, false);
     show(resendBtn, false);
   }
@@ -168,9 +184,9 @@
   function begin() {
     if (state !== "unlit") return;
     var words = K.cleanIntention(field.value);
+    if (!K.canLight(words)) { field.focus(); return; }   // something to light it for, first
     field.blur();
     show(ask, false);
-    if (!words) { light("", Date.now(), false); return; }
     state = "rising";
     main.classList.add("rising");
     say.textContent = "";
@@ -185,10 +201,10 @@
     });
   }
 
-  // already: a candle lit on an earlier visit, reopened
-  function light(intention, litAt, already) {
+  // already: a candle lit on an earlier visit, reopened (later: Tilia's line, if it came)
+  function light(intention, litAt, already, later, now) {
     state = "lit"; loud = 0;
-    lit = { litAt: litAt, intention: intention };
+    lit = { litAt: litAt, intention: intention, later: later || undefined, now: now || undefined };
     clearOut();
     if (!already) saveLit();
     var top0 = candle.getBoundingClientRect().top;
@@ -206,6 +222,40 @@
     clearInterval(burnTimer);
     burnTimer = setInterval(burnNow, 30000);
     if (!already) haptic("light");
+    listen();
+  }
+
+  // Lit (saved first), so Tilia is asked: a thin wisp rises while the page waits, and her
+  // line forms in the smoke when it comes. Her later line is kept with the lit candle for
+  // blow-out. No answer in 30 s: the wisp fades and nothing is spelled, ever.
+  function listen() {
+    if (!voice || !lit || !CandleVoice.needsAsk({ state: state, later: lit.later })) return;
+    var seq = ++askSeq, mine = lit;
+    // a late reopen (R9) asks only for the blow-out line: no wisp, nothing spelled now
+    var late = !CandleVoice.speaksNow(mine.litAt, Date.now());
+    stopWisp = late ? null : CandleSmoke.gather();
+    CandleVoice.ask({ relay: voice.relay, mac: voice.mac, k: voice.k, id: launch.id,
+                      intention: mine.intention }).then(function (lines) {
+      if (seq !== askSeq) return;
+      var still = state === "lit" && lit === mine;
+      if (!lines) { if (still && stopWisp) stopWisp(); stopWisp = null; return; }
+      mine.later = lines.later;                  // kept for blow-out, if it's still to come
+      if (still && !CandleVoice.speaksNow(mine.litAt, Date.now())) {
+        if (stopWisp) stopWisp();                // past 10 min: never spelled (R9)
+        stopWisp = null;
+        saveLit();
+        return;
+      }
+      if (!still) return;                        // too late for the smoke: never spelled
+      mine.now = lines.now;                      // spelled just below
+      saveLit();
+      stopWisp = null;
+      main.classList.add("speaking");
+      after.textContent = lines.now;
+      CandleSmoke.speak(lines.now, function () {
+        if (seq === askSeq) main.classList.remove("speaking");
+      }, CandleVoice.holdMs(lines.now));
+    });
   }
 
   // the lit words above are a different length, so the candle may sit higher or lower now:
@@ -224,6 +274,7 @@
     if (state !== "lit") return;
     state = "out";
     outAt = Date.now();
+    main.classList.remove("speaking");
     clearInterval(burnTimer);
     CandleFlame.setState("out");
     CandleFlame.setCalm(K.NEUTRAL);
@@ -232,7 +283,10 @@
     hint.textContent = how === "mic" ? "Blown out." : "Tapped out.";
     show(micBtn, false); show(meter, false); show(again, false); show(done, false);
     haptic("success");
-    var words = K.echo(lit && lit.intention);
+    // their words, then Tilia's sealed line (saved with the lit candle, or only in memory
+    // if it came late); without one, just their words
+    var words = K.echo(lit && lit.intention, lit && lit.later);
+    if (lit) lit.spelled = words.length > 1 ? words[1] : undefined;
     after.textContent = words.join(" ");
     CandleSmoke.morph(words, CandleFollow.show);
   }
@@ -240,8 +294,7 @@
   function send(data) {
     main.setAttribute("data-sent", data);   // for the dev frames outside Telegram
     if (plain) {
-      say.textContent = "Noted. Outside Telegram nothing is sent.";
-      show(done, true);
+      say.textContent = "Noted. Outside Telegram nothing is sent.";   // the field's Done was the Done
       return;
     }
     try { tg.sendData(data); } catch (e) {
@@ -249,17 +302,18 @@
     }
   }
 
-  // how it went: kept as pending first, then sent back to Tilia at once (Telegram closing
-  // the page is the confirmation)
+  // Done (with their words, or nothing): kept as pending first, then sent back to Tilia at
+  // once (Telegram closing the page is the confirmation)
   function picked(answer) {
     haptic("light");
     if (!launch.entry) {
       say.textContent = "Noted. Tilia will pick this up with you.";
-      show(again, true); show(done, true);
+      show(again, true);
       return;
     }
     state = "sent";
-    var data = K.payload(launch, lit ? lit.intention : "", lit ? lit.litAt : outAt, outAt, answer);
+    var shown = lit ? { now: lit.now, later: lit.spelled } : null;
+    var data = K.payload(launch, lit ? lit.intention : "", lit ? lit.litAt : outAt, outAt, answer, shown);
     savePending(answer, function () {
       say.textContent = "Noted. Tilia will pick this up with you.";
       send(data);
@@ -270,15 +324,15 @@
   function answered(s) {
     state = "sent";
     sent = s;
-    lit = { litAt: s.litAt, intention: s.intention };
+    lit = { litAt: s.litAt, intention: s.intention, now: s.now, later: s.later, spelled: s.later };
     outAt = s.outAt;
     candle.style.setProperty("--burnt", Math.round(K.burnFraction(s.litAt, s.outAt) * 100) + "px");
     CandleFlame.setBurn(K.burnFraction(s.litAt, s.outAt));
     main.classList.remove("lit", "rising"); main.classList.add("out");
-    say.textContent = "You said: " + s.answer;
+    say.textContent = s.answer ? "You said: " + s.answer : "";
     hint.textContent = "";
     show(ask, false); show(micBtn, false); show(meter, false); show(again, false); show(done, false);
-    var words = K.echo(s.intention);
+    var words = K.echo(s.intention, s.later);
     after.textContent = words.join(" ");
     CandleSmoke.morph(words, function () { show(resendBtn, true); });
   }
@@ -288,7 +342,7 @@
     else if (state === "unlit") begin();
   });
   ask.addEventListener("submit", function (e) { e.preventDefault(); begin(); });
-  skip.addEventListener("click", function () { field.value = ""; begin(); });
+  field.addEventListener("input", function () { lightBtn.disabled = !K.canLight(field.value); });
   again.addEventListener("click", unlit);
   resendBtn.addEventListener("click", function () {
     if (!sent) return;
@@ -400,7 +454,7 @@
 
   loadLit(function (raw) {
     var s = K.restore(raw, Date.now());
-    if (s.state === "lit") light(s.intention, s.litAt, true);
+    if (s.state === "lit") light(s.intention, s.litAt, true, s.later, s.now);
     else if (s.state === "sent") answered(s);
     else unlit();
     if (key) setTimeout(function () { try { sweep(); } catch (e) { /* housekeeping only */ } }, 0);

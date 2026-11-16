@@ -18,8 +18,8 @@
   var INTENTION_MAX = 60;               // one short line, so the smoke can spell it back
   var CALM_WINDOW_S = 30;               // how much breathing the flame listens to
   var NEUTRAL = 0.5;                    // the flame as it always was: nothing to go on
+  var ANSWER_MAX = 200;                 // "Anything to tell Tilia?": one field, optional
   var OUT_LINE = "It's out.";
-  var ASK_LINE = "How did it go?";
   var ID = /^[A-Za-z0-9_-]{12}$/;
 
   function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -38,16 +38,48 @@
 
   function storeKey(id) { return "candle_" + id; }
 
-  function litValue(litAt, intention) {
-    return JSON.stringify({ lit_at: litAt, intention: cleanIntention(intention) });
+  /* Something to light it for: at least one character that isn't a space. */
+  function canLight(text) {
+    return typeof text === "string" && /\S/.test(text);
   }
 
-  /* Blown out and answered: kept in place of the lit record before sendData, so an answer
-     is never lost if the page is swiped away; reopened, it offers "Send it again" (Tilia
-     takes a second copy as already answered). */
-  function pendingValue(litAt, intention, outAt, answer) {
-    return JSON.stringify({ lit_at: litAt, intention: cleanIntention(intention), out_at: outAt,
-                            answer: answer, sent: true });
+  /* Tilia's later line, as it came (never cut here: the Mac checks its length). */
+  function isLine(v) { return typeof v === "string" && /\S/.test(v); }
+
+  /* later: Tilia's line kept for blow-out, once the smoke has answered; absent until then.
+     now: her line for the lit candle, only once the smoke has spelled it. */
+  function litValue(litAt, intention, later, now) {
+    var o = { lit_at: litAt, intention: cleanIntention(intention) };
+    if (isLine(later)) o.later = later;
+    if (isLine(now)) o.now = now;
+    return JSON.stringify(o);
+  }
+
+  /* What they typed for Tilia after blow-out: one line, maybe nothing at all. */
+  function cleanAnswer(s) {
+    if (typeof s !== "string") return "";
+    return Array.from(s.replace(/\s+/g, " ").trim()).slice(0, ANSWER_MAX).join("").trim();
+  }
+
+  /* Tilia's two lines as the page has them ({now, later}, either may be missing), only the
+     ones that are lines. */
+  function linesOf(lines) {
+    var o = {};
+    if (lines && isLine(lines.now)) o.now = lines.now;
+    if (lines && isLine(lines.later)) o.later = lines.later;
+    return o;
+  }
+
+  /* Blown out and answered (the answer may be empty): kept in place of the lit record before
+     sendData, so it is never lost if the page is swiped away; reopened, it offers "Send it
+     again" (Tilia takes a second copy as already answered). lines: Tilia's, if they came. */
+  function pendingValue(litAt, intention, outAt, answer, lines) {
+    var o = { lit_at: litAt, intention: cleanIntention(intention), out_at: outAt,
+              answer: cleanAnswer(answer), sent: true };
+    var l = linesOf(lines);
+    if (l.now) o.now = l.now;
+    if (l.later) o.later = l.later;
+    return JSON.stringify(o);
   }
 
   function readLit(raw) {
@@ -56,9 +88,11 @@
       var o = JSON.parse(raw);
       if (!o || typeof o !== "object" || Array.isArray(o) || !isTime(o.lit_at)) return null;
       var out = { litAt: o.lit_at, intention: cleanIntention(o.intention) };
+      if (isLine(o.later)) out.later = o.later;
+      if (isLine(o.now)) out.now = o.now;
       if (o.sent === true) {
-        if (!isTime(o.out_at) || typeof o.answer !== "string" || !o.answer.trim()) return null;
-        out.sent = true; out.outAt = o.out_at; out.answer = o.answer;
+        if (!isTime(o.out_at) || typeof o.answer !== "string") return null;
+        out.sent = true; out.outAt = o.out_at; out.answer = cleanAnswer(o.answer);
       }
       return out;
     } catch (e) {
@@ -66,17 +100,24 @@
     }
   }
 
-  /* What the page shows when it opens: unlit; lit (however long ago) and waiting; or sent
-     (blown out and answered, with the answer to send again). */
+  /* What the page shows when it opens: unlit; lit (however long ago) and waiting, with
+     Tilia's later line once it has come; or sent (blown out and answered, with the answer,
+     and Tilia's lines if they came, to send again). */
   function restore(raw, now) {
     var lit = readLit(raw);
     if (!lit) return { state: "unlit" };
     if (lit.sent) {
-      return { state: "sent", litAt: lit.litAt, intention: lit.intention, outAt: lit.outAt,
-               answer: lit.answer };
+      var sent = { state: "sent", litAt: lit.litAt, intention: lit.intention, outAt: lit.outAt,
+                   answer: lit.answer };
+      if (lit.now) sent.now = lit.now;
+      if (lit.later) sent.later = lit.later;
+      return sent;
     }
     var burn = burnFraction(lit.litAt, now);
-    return { state: "lit", litAt: lit.litAt, intention: lit.intention, burn: burn, ember: burn >= 1 };
+    var s = { state: "lit", litAt: lit.litAt, intention: lit.intention, burn: burn, ember: burn >= 1 };
+    if (lit.later) s.later = lit.later;
+    if (lit.now) s.now = lit.now;
+    return s;
   }
 
   /* Other entries' candles: already sent, can no longer be answered, or can't be read. */
@@ -95,20 +136,27 @@
              entry: type === "candle" && ID.test(id || "") };
   }
 
-  function payload(launch, intention, litAt, outAt, answer) {
-    return JSON.stringify({ v: 1, type: "candle", id: launch.id, intention: cleanIntention(intention),
-                            lit_at: litAt, out_at: outAt, answer: answer });
+  /* What goes back to Tilia at Done. answer may be "" (nothing said); lines: Tilia's
+     {now, later} if they came, sent along but never trusted (the Mac keeps its own copy). */
+  function payload(launch, intention, litAt, outAt, answer, lines) {
+    var o = { v: 1, type: "candle", id: launch.id, intention: cleanIntention(intention),
+              lit_at: litAt, out_at: outAt, answer: cleanAnswer(answer) };
+    var l = linesOf(lines);
+    if (l.now) o.now = l.now;
+    if (l.later) o.later = l.later;
+    return JSON.stringify(o);
   }
 
   /* The same answer again, from a sent record restore() returned. */
   function resend(launch, s) {
-    return payload(launch, s.intention, s.litAt, s.outAt, s.answer);
+    return payload(launch, s.intention, s.litAt, s.outAt, s.answer, s);
   }
 
-  /* What the smoke spells at blow-out: their words, or a plain line when there are none. */
-  function echo(intention) {
-    var s = cleanIntention(intention);
-    return [s || OUT_LINE, ASK_LINE];
+  /* What the smoke spells at blow-out: their words (or a plain line when there are none),
+     then the line Tilia sealed for this moment, when one came. */
+  function echo(intention, later) {
+    var s = cleanIntention(intention) || OUT_LINE;
+    return isLine(later) ? [s, later] : [s];
   }
 
   /* ---- breath rhythm -----------------------------------------------------------------
@@ -261,10 +309,13 @@
     springStep: springStep,
     BURN_MS: BURN_MS,
     INTENTION_MAX: INTENTION_MAX,
+    ANSWER_MAX: ANSWER_MAX,
+    cleanAnswer: cleanAnswer,
     CALM_WINDOW_S: CALM_WINDOW_S,
     NEUTRAL: NEUTRAL,
     burnFraction: burnFraction,
     cleanIntention: cleanIntention,
+    canLight: canLight,
     storeKey: storeKey,
     litValue: litValue,
     pendingValue: pendingValue,

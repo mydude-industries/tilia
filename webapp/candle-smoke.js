@@ -1,10 +1,13 @@
 // The smoke that becomes the follow-up. Owned by the smoke module: candle.js only calls
-// CandleSmoke.init(canvas, main, candle), CandleSmoke.morph([small, big], onReady),
-// CandleSmoke.rise(text, onGather, onDone) and CandleSmoke.clear().
+// CandleSmoke.init(canvas, main, candle), CandleSmoke.morph([small, big] | [big], onReady),
+// CandleSmoke.rise(text, onGather, onDone), CandleSmoke.gather() -> stop,
+// CandleSmoke.speak(line, onDone, holdMs) and CandleSmoke.clear().
 // rise is the morph backwards: their words come apart into motes that fall into the flame's
 // own shape and become it. onGather(frac, fade) is called every frame with how much of the
 // words has arrived (the flame grows by it, and returns its size); onDone (lighting it)
 // runs once the last has merged.
+// gather is a thin wisp off the lit flame while Tilia is asked; speak spells Tilia's line
+// from the flame's tip, holds it holdMs, and lets it drift away (onDone when it's gone).
 "use strict";
 
 window.CandleSmoke = (function () {
@@ -15,7 +18,6 @@ window.CandleSmoke = (function () {
   // flares as it lands, and cools to ink while the crisp words are revealed beneath it in
   // the same left-to-right wave. The words keep a faint warmth.
   var fx, gfx, main, candle, wick, anim = null;
-  var SERIF = '500 30px "New York", ui-serif, "Iowan Old Style", Charter, Georgia, serif';
   var SANS_FACE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   var SERIF_FACE = '"New York", ui-serif, "Iowan Old Style", Charter, Georgia, serif';
   var SANS = "600 13px " + SANS_FACE;
@@ -25,6 +27,8 @@ window.CandleSmoke = (function () {
   var CAP0 = 1300, CAPW = 1300;             // the gathering wave: first start, spread across the words
   var REVEAL = 1300, REVEAL_FADE = 520;     // crisp text shows this long after a spot starts gathering
   var READY = 3800, END = 4900;
+  var LEAVE_W = 1100, LEAVE_FADE = 520;     // a held line comes apart left to right across this long
+  var DRIFT = 2600;                         // and its motes drift off as smoke for this long
 
   // ---- sprites (pre-rendered; nothing is blurred in the hot loop) ----
   function sprite(rgb, stops) {
@@ -93,7 +97,7 @@ window.CandleSmoke = (function () {
     g.shadowColor = "rgba(255,168,64," + glowA.toFixed(3) + ")"; g.shadowBlur = blur;
     L.forEach(function (ln, k) {
       g.font = ln.font; try { g.letterSpacing = ln.spacing || "0px"; } catch (e) { /* older client */ }
-      g.fillStyle = k === 0 ? "#8c877b" : "#ece7da";
+      g.fillStyle = ln.color || (k === 0 ? "#8c877b" : "#ece7da");
       g.fillText(ln.text, W / 2, ln.y);
     });
     g.shadowBlur = 0; g.shadowColor = "transparent";
@@ -129,8 +133,8 @@ window.CandleSmoke = (function () {
     return { text: chars.join("").trim() + "\u2026", font: font, spacing: spacing };
   }
   // their words, in the serif: one line if it fits at a readable size, else two
-  function fitSerif(text, maxW) {
-    for (var px = 30; px >= 19; px -= 1) {
+  function fitSerif(text, maxW, maxPx) {
+    for (var px = maxPx || 30; px >= 19; px -= 1) {
       var f = "500 " + px + "px " + SERIF_FACE;
       if (widthOf(text, f) <= maxW) return { font: f, lines: [text], px: px };
     }
@@ -141,35 +145,94 @@ window.CandleSmoke = (function () {
       if (!best || m < best.m) best = { m: m, lines: [a, b] };
     }
     var lines = best ? best.lines : [text];
-    for (px = 26; px >= 14; px -= 1) {
+    for (px = Math.min(26, maxPx || 26); px >= 14; px -= 1) {
       f = "500 " + px + "px " + SERIF_FACE;
       if (lines.every(function (ln) { return widthOf(ln, f) <= maxW; })) return { font: f, lines: lines, px: px };
     }
     return { font: "500 14px " + SERIF_FACE, lines: lines, px: 14 };
   }
 
-  function morph(lines, onReady) {
-    clear();
-    newAir();
+  // the canvas over the page, from the top of main to just below the wick; resized only
+  // when it has to be (resizing wipes it, and the wisp may be drawing)
+  var geo = { dpr: 1, W: 0, H: 0 };
+  function fit() {
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     var mr = main.getBoundingClientRect();
     var tip = tipNow();
     var W = Math.round(mr.width), H = Math.max(180, Math.round(tip[1] + 26));
-    fx.width = Math.round(W * dpr); fx.height = Math.round(H * dpr); fx.style.height = H + "px";
-    var ty = Math.max(80, tip[1] * 0.55);
-    var small = fitSans(lines[0], W - 24);                                 // their own words can be long
-    var L = [{ text: small.text, font: small.font, y: ty - 36, spacing: small.spacing }, { text: lines[1], font: SERIF, y: ty }];
-    var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (fx.width !== Math.round(W * dpr) || fx.height !== Math.round(H * dpr)) {
+      fx.width = Math.round(W * dpr); fx.height = Math.round(H * dpr);
+    }
+    fx.style.height = H + "px";
+    geo = { dpr: dpr, W: W, H: H };
+    return { dpr: dpr, W: W, H: H, tip: tip };
+  }
+  function reduced() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  // blow-out: [their words, Tilia's sealed line] (their words small above, her line in the
+  // serif, on two rows if it needs them), or [their words] alone, in the serif
+  function morph(lines, onReady) {
+    clear();
+    newAir();
+    var c = fit();
+    var ty = Math.max(80, c.tip[1] * 0.55);
+    var big = String(lines.length > 1 ? lines[1] : lines[0]);
+    var fs = fitSerif(big, c.W - 40, 30), gap = fs.px * 1.3;
+    var y0 = ty - (fs.lines.length - 1) * gap / 2;
+    var L = fs.lines.map(function (ln, k) {
+      return { text: ln, font: fs.font, color: "#ece7da", y: y0 + k * gap };
+    });
+    L.forEach(function (ln, k) { ln.top = k === 0 ? y0 - fs.px * 0.83 : (L[k - 1].y + ln.y) / 2; });
+    if (lines.length > 1) {
+      var small = fitSans(String(lines[0]), c.W - 24);                     // their own words can be long
+      L.unshift({ text: small.text, font: small.font, y: y0 - Math.round(fs.px * 0.9 + 9),
+                  spacing: small.spacing, color: "#8c877b" });
+    }
+    L[0].top = 0;
+    form(c, L, { onReady: onReady });
+  }
+
+  // ---- speak: Tilia's line, in the smoke above the lit flame. The wisp that waited fades
+  // as a ribbon leaves the flame's tip and gathers into the line (the same morph as at
+  // blow-out); it holds long enough to read, then comes apart left to right and drifts
+  // away as smoke. onDone once it has gone.
+  function speak(line, onDone, hold) {
+    if (anim) { cancelAnimationFrame(anim); anim = null; }
+    if (wisp && wisp.stop < 0) wisp.stop = wisp.now;                       // the wait is over
+    if (!waves.length) newAir();                                           // the same air the wisp is in
+    var c = fit();
+    var ty = Math.max(80, c.tip[1] * 0.5);
+    var fs = fitSerif(String(line), c.W - 40, 25), gap = fs.px * 1.3;
+    var L = fs.lines.map(function (ln, k) {
+      return { text: ln, font: fs.font, color: "#ece7da", y: ty - (fs.lines.length - 1) * gap / 2 + k * gap };
+    });
+    L.forEach(function (ln, k) { ln.top = k === 0 ? 0 : (L[k - 1].y + ln.y) / 2; });
+    form(c, L, { lift: C0().FLAME_H + 4, hold: hold > 0 ? hold : 3500, onDone: onDone });
+  }
+
+  // Smoke into words: a ribbon leaves the wick (or `lift` px above it, the flame's tip),
+  // and is gathered into L. o.onReady once the words can be read. With o.hold, the words
+  // stay that long once formed, then drift off as smoke and o.onDone runs.
+  function form(c, L, o) {
+    var dpr = c.dpr, W = c.W, H = c.H, lift = o.lift || 0, onReady = o.onReady, onDone = o.onDone;
+    var hold = o.hold || 0;
+    var calm = reduced();
+    function done() { if (onDone) { var d = onDone; onDone = null; d(); } }
 
     if (calm) {                                                         // no drifting particles: the words just arrive
       var c0 = null;
       anim = requestAnimationFrame(function still(now) {
         if (c0 === null) c0 = now;
-        var a = clamp01((now - c0) / 900);
+        var t = now - c0, a = clamp01(t / 900);
+        if (hold) a *= 1 - clamp01((t - 900 - hold) / 900);             // and, when it's a line, leave
         gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
         gfx.globalAlpha = a; drawText(gfx, L, W, 0.2, 7); gfx.globalAlpha = 1;
         if (a > 0.6 && onReady) { onReady(); onReady = null; }
-        anim = a < 1 ? requestAnimationFrame(still) : null;
+        var more = hold ? t < 1800 + hold : a < 1;
+        anim = more ? requestAnimationFrame(still) : null;
+        if (!more && hold) { gfx.clearRect(0, 0, W, H); done(); }
       });
       return;
     }
@@ -188,6 +251,9 @@ window.CandleSmoke = (function () {
       if (q.x < e.x0) e.x0 = q.x; if (q.x > e.x1) e.x1 = q.x;
       if (r < e.r0) e.r0 = r; if (r > e.r1) e.r1 = r;
     });
+    // a held line: once formed it holds, then leaves in the same left-to-right wave it came in
+    var SHOWN = CAP0 + CAPW + REVEAL + REVEAL_FADE;
+    var REL = hold ? SHOWN + hold : 1e12, GONE = REL + LEAVE_W + DRIFT;
 
     var P = [], ti = 0;
     for (var i = 0; i < N; i++) {
@@ -200,6 +266,7 @@ window.CandleSmoke = (function () {
         born: born, live: false, x: 0, y: 0, vx: 0, vy: 0, gx: 0, gy: 0,
         tx: tgt ? tgt.x : 0, ty: tgt ? tgt.y : 0, tgt: !!tgt,
         cs: tgt ? Math.max(born + 380, CAP0 + r * CAPW) : 1e9,
+        rl: tgt ? REL + r * LEAVE_W + Math.random() * 90 : 1e12, gone: -1,
         spin: Math.random() < 0.5 ? -1 : 1, ph: Math.random() * 6.283, ox: Math.cos(i * 2.399), oy: Math.sin(i * 2.399) * 0.6,
         warm: 0, d0: -1, arr: -1, life: 2200 + Math.random() * 900
       });
@@ -211,16 +278,26 @@ window.CandleSmoke = (function () {
     // one physics step; the frame loop runs several when the page stalls, so motion keeps real time
     function move(t, dt, tip) {
       var ts = t / 1000, draft = 4 * Math.sin(ts * 0.7 + waves[0].p), i, p, age, g;
+      var src = tip[1] - lift;
       for (i = 0; i < P.length; i++) {
         p = P[i]; age = t - p.born;
         if (age < 0) continue;
         if (!p.live) {
-          p.live = true; p.x = tip[0] + (Math.random() - 0.5) * 0.8; p.y = tip[1] - 1;
+          p.live = true; p.x = tip[0] + (Math.random() - 0.5) * 0.8; p.y = src - 1;
           p.vx = 0; p.vy = -150;
+        }
+        if (t >= p.rl) {                                                // leaving: a letter's mote, loose in the air again
+          if (p.gone < 0) { p.gone = t; p.vx = 0; p.vy = 0; }
+          var la = t - p.gone, loose = smooth(0, 900, la);
+          swirl(p.x, p.y, ts);
+          var lvx = air[0] * 0.55 * loose + draft * 0.5, lvy = air[1] * 0.55 * loose - (10 + 16 * loose);
+          p.vx += 3 * (lvx - p.vx) * dt; p.vy += 3 * (lvy - p.vy) * dt;
+          p.x += p.vx * dt; p.y += p.vy * dt;
+          continue;
         }
         g = t - p.cs;
         var ramp = smooth(0, 650, g);
-        var h = tip[1] - p.y;                                           // height above the wick
+        var h = src - p.y;                                              // height above where it left
         swirl(p.x, p.y, ts);
         var turb = smooth(3, 46, h) * (0.6 + 0.4 * clamp01(age / 700)) * (1 + 0.7 * smooth(50, 150, h)); // laminar at the wick, curling higher up
         var up = 38 + 125 * Math.exp(-age / 600);                        // fastest near the wick, slows as it cools
@@ -254,6 +331,7 @@ window.CandleSmoke = (function () {
       var tip = tipNow(), i, p, age, g;
       gfx.setTransform(dpr, 0, 0, dpr, 0, 0);
       gfx.clearRect(0, 0, W, H);
+      if (wisp) wispTick(now);                                          // the wait's wisp, fading behind
 
       // ---- move (real time, in steps of at most 1/60 s) ----
       var steps = Math.min(4, Math.ceil(raw / 0.0167));
@@ -290,6 +368,14 @@ window.CandleSmoke = (function () {
       for (i = 0; i < P.length; i++) {
         p = P[i]; if (!p.live) { busy = true; continue; }
         age = t - p.born; g = t - p.cs;
+        if (p.gone >= 0) {                                              // a letter coming apart: ink, then smoke
+          var la = t - p.gone, out = 1 - smooth(DRIFT * 0.35, DRIFT, la);
+          var inkL = 0.5 * Math.exp(-la / 300);
+          if (inkL > 0.004) { gfx.globalAlpha = inkL; gfx.drawImage(INK, p.x - 2.4, p.y - 2.4, 4.8, 4.8); }
+          var smL = 0.04 * smooth(0, 400, la) * out, szL = 4 + 20 * smooth(0, DRIFT * 0.7, la);
+          if (smL > 0.004) { gfx.globalAlpha = smL; gfx.drawImage(SMOKE, p.x - szL / 2, p.y - szL / 2, szL, szL); }
+          continue;
+        }
         var ramp2 = smooth(0, 650, g), dis = smooth(REVEAL, REVEAL + 600, g);
         var smokeA = 0.013 * smooth(0, 450, age) * Math.pow(clamp01(1 - age / p.life), 1.5) * (1 - ramp2) * late;
         if (p.tgt) busy = busy || dis < 1; else busy = busy || smokeA > 0.004;
@@ -308,7 +394,7 @@ window.CandleSmoke = (function () {
       // ---- embers (additive: overlapping embers bloom, as fire does) ----
       gfx.globalCompositeOperation = "lighter";
       for (i = 0; i < P.length; i++) {
-        p = P[i]; if (!p.live) continue;
+        p = P[i]; if (!p.live || p.gone >= 0) continue;
         age = t - p.born; g = t - p.cs;
         var ea = 0, es = 4;
         if (p.tgt && p.warm > 0) {
@@ -323,18 +409,21 @@ window.CandleSmoke = (function () {
       // ---- the crisp words, revealed in the same wave; the glow cools to a faint warmth ----
       var cooled = Math.exp(-Math.max(0, t - 3000) / 650);
       var glow = 0.2 + 0.55 * cooled, blur = 7 + 10 * cooled;
-      if (t > CAP0 + REVEAL - 50) {
+      var leaving = t > REL - 50;
+      if (t > CAP0 + REVEAL - 50 && t < REL + LEAVE_W + LEAVE_FADE + 200) {
         tg.setTransform(dpr, 0, 0, dpr, 0, 0); tg.clearRect(0, 0, W, H);
         drawText(tg, L, W, glow, blur);
-        if (t < CAP0 + CAPW + REVEAL + REVEAL_FADE + 40) {
+        if (t < CAP0 + CAPW + REVEAL + REVEAL_FADE + 40 || leaving) {
           tg.globalCompositeOperation = "destination-out";
-          var split = L[1].y - 25;                                       // between the small line and the big line's ascenders
           L.forEach(function (ln, k) {
             var e = ext[k]; if (e.x1 < e.x0) return;
-            function hidden(rr) { return 1 - smooth(0, REVEAL_FADE, t - (CAP0 + rr * CAPW + REVEAL)); }
+            function hidden(rr) {
+              var h0 = 1 - smooth(0, REVEAL_FADE, t - (CAP0 + rr * CAPW + REVEAL));
+              return leaving ? Math.max(h0, smooth(0, LEAVE_FADE, t - (REL + rr * LEAVE_W))) : h0;
+            }
             var gr = tg.createLinearGradient(e.x0 - 2, 0, e.x1 + 2, 0);
             for (var s = 0; s <= 12; s++) gr.addColorStop(s / 12, "rgba(0,0,0," + hidden(e.r0 + (e.r1 - e.r0) * s / 12).toFixed(3) + ")");
-            var top = k === 0 ? 0 : split, bot = k === 0 ? split : H;
+            var top = ln.top || 0, bot = k + 1 < L.length ? L[k + 1].top : H;
             tg.fillStyle = gr; tg.fillRect(0, top, W, bot - top);
           });
           tg.globalCompositeOperation = "source-over";
@@ -345,6 +434,14 @@ window.CandleSmoke = (function () {
       gfx.globalAlpha = 1;
 
       if (t > READY && onReady) { onReady(); onReady = null; }
+      if (hold) {                                                       // a line: it holds, leaves, and is gone
+        if (t < GONE) { anim = requestAnimationFrame(frame); return; }
+        anim = null;
+        gfx.setTransform(dpr, 0, 0, dpr, 0, 0); gfx.clearRect(0, 0, W, H);
+        if (wisp && !wispAnim) wispAnim = requestAnimationFrame(wispLoop);
+        done();
+        return;
+      }
       if (t < END || busy) anim = requestAnimationFrame(frame);
       else {                                                            // rest: just the words, faintly warm
         anim = null;
@@ -353,6 +450,81 @@ window.CandleSmoke = (function () {
       }
     }
     anim = requestAnimationFrame(frame);
+  }
+
+  // ---- gather: while Tilia is asked, a thin, calm wisp rises off the flame's tip, the
+  // way a candle smokes a little in still air. It never flickers: one slow ribbon, bent
+  // by the same smooth air as the smoke, fading as it climbs. gather() returns stop(),
+  // which lets it thin and fade out (speak stops it too). Nothing with reduced motion.
+  var wisp = null, wispAnim = null;
+  var WISP_LIFE = 3500, WISP_EVERY = 50;
+  function C0() { return window.CandleCore || { FLAME_H: 47 }; }
+
+  function gather() {
+    if (!fx || reduced()) return function () {};
+    if (!waves.length) newAir();
+    if (!anim) fit();
+    if (wisp) wisp.stop = -1;                                          // asked again while it fades: keep it
+    else wisp = { P: [], t0: null, last: 0, next: 0, now: 0, stop: -1 };
+    if (!anim && !wispAnim) wispAnim = requestAnimationFrame(wispLoop);
+    var mine = wisp;
+    return function stop() { if (wisp === mine && wisp.stop < 0) wisp.stop = wisp.now; };
+  }
+
+  function wispLoop(now) {
+    wispAnim = null;
+    if (!wisp || anim) return;                                          // a morph running draws it itself
+    gfx.setTransform(geo.dpr, 0, 0, geo.dpr, 0, 0);
+    gfx.clearRect(0, 0, geo.W, geo.H);
+    wispTick(now);
+    if (wisp) wispAnim = requestAnimationFrame(wispLoop);
+    else gfx.clearRect(0, 0, geo.W, geo.H);
+  }
+
+  // one step and one drawing of the wisp, in CSS px (the caller has set the transform)
+  function wispTick(now) {
+    var w = wisp;
+    if (w.t0 === null) { w.t0 = now; w.last = now; }
+    var t = now - w.t0, dt = Math.min(0.05, Math.max(0.001, (now - w.last) / 1000));
+    w.last = now; w.now = t;
+    var tip = tipNow(), sx = tip[0], sy = tip[1] - C0().FLAME_H * 0.92, ts = t / 1000;
+    if (w.stop < 0) {
+      if (t - w.next > 400) w.next = t - 400;                           // a stalled page doesn't burst
+      while (w.next <= t) {
+        w.P.push({ x: sx, y: sy, vx: 0, vy: -26, born: w.next });
+        w.next += WISP_EVERY;
+      }
+    }
+    var i, p, keep = [];
+    for (i = 0; i < w.P.length; i++) {
+      p = w.P[i];
+      var age = t - p.born;
+      if (age > WISP_LIFE) continue;
+      var h = sy - p.y;
+      swirl(p.x, p.y, ts * 0.6);
+      var turb = 0.32 * smooth(6, 90, h);                               // straight off the tip, a slow curl higher up
+      var fvx = air[0] * turb, fvy = air[1] * turb - (26 - 8 * smooth(0, WISP_LIFE, age));
+      p.vx += 2.5 * (fvx - p.vx) * dt; p.vy += 2.5 * (fvy - p.vy) * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      keep.push(p);
+    }
+    w.P = keep;
+    var master = smooth(0, 2200, t) * (w.stop < 0 ? 1 : 1 - smooth(w.stop, w.stop + 1400, t));
+    if (master <= 0.001) {
+      if (w.stop >= 0) wisp = null;
+      return;
+    }
+    gfx.lineCap = "round"; gfx.lineJoin = "round"; gfx.strokeStyle = "rgb(196,191,181)";
+    for (i = 1; i < w.P.length; i++) {
+      var a = w.P[i - 1], b = w.P[i], u = (t - b.born) / WISP_LIFE;
+      var al = 0.17 * smooth(60, 700, t - b.born) * Math.pow(clamp01(1 - u), 1.5) * master;
+      if (al < 0.003) continue;
+      var lw = 0.7 + 1.5 * u;
+      gfx.beginPath(); gfx.moveTo(a.x, a.y); gfx.lineTo(b.x, b.y);
+      gfx.globalAlpha = al * 0.22; gfx.lineWidth = lw * 4; gfx.stroke();
+      gfx.globalAlpha = al; gfx.lineWidth = lw; gfx.stroke();
+    }
+    gfx.globalAlpha = 1;
   }
 
   // ---- rise: their words become the flame, on one timeline. The words come apart, left
@@ -501,6 +673,8 @@ window.CandleSmoke = (function () {
 
   function clear() {
     if (anim) { cancelAnimationFrame(anim); anim = null; }
+    if (wispAnim) { cancelAnimationFrame(wispAnim); wispAnim = null; }
+    wisp = null;
     if (gfx) {
       gfx.setTransform(1, 0, 0, 1, 0, 0); gfx.globalAlpha = 1; gfx.globalCompositeOperation = "source-over";
       gfx.clearRect(0, 0, fx.width, fx.height);
@@ -512,5 +686,5 @@ window.CandleSmoke = (function () {
     wick = candle.querySelector(".wick");
   }
 
-  return { init: init, morph: morph, rise: rise, clear: clear };
+  return { init: init, morph: morph, rise: rise, gather: gather, speak: speak, clear: clear };
 })();

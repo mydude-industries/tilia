@@ -100,10 +100,8 @@
     caret-color: rgb(180, 140, 60); outline: none; -webkit-appearance: none; appearance: none; border-radius: 12px; }
   .ask-field::placeholder { color: var(--muted); opacity: .8; font-style: italic; }
   .ask .tap { margin-top: 12px; }
-  .ask-skip { display: block; margin: 10px auto 0; padding: 10px 14px; border: 0; background: none;
-    color: var(--muted); font: 14px/1.3 var(--sans); cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .ask-skip:active { color: var(--soft); }
-  .ask-skip:focus-visible { outline: 1px solid rgba(180, 140, 60, .7); outline-offset: 3px; border-radius: 8px; }
+  /* nothing to light it for yet: the button waits, quietly */
+  .ask .tap:disabled { opacity: .38; cursor: default; transform: none; }
   [hidden] { display: none !important; }
   .note { color: #6b675e; font: 11.5px/1.5 var(--sans); text-align: center; max-width: 34ch; margin: 40px auto 0;
     transition: opacity var(--warm); }
@@ -111,7 +109,9 @@
 
   /* ---- the smoke canvas and the screen-reader line */
   #fx { position: absolute; left: 0; top: 0; z-index: 1; width: 100%; pointer-events: none; display: none; }
-  .out #fx { display: block; }
+  .out #fx, .lit #fx { display: block; }
+  /* Tilia's line in the smoke takes the head's place for a moment */
+  .speaking .head { opacity: 0; transition: opacity .9s ease-out; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .follow { opacity: 0; transition: opacity .8s; }
   .follow.on { opacity: 1; }
