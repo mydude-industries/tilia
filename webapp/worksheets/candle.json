@@ -4,7 +4,7 @@
   "title": "Candle",
   "pitch": "Light it before the hard thing, and blow it out when it's done.",
   "cards": [
-    {"id": "intention", "kind": "text", "short": "for", "prompt": "What's this candle for?", "personal": false, "max_chars": 120},
+    {"id": "intention", "kind": "text", "short": "for", "prompt": "Set your intention", "personal": false, "max_chars": 120},
     {"id": "lit", "kind": "text", "short": "lit", "prompt": "Lit", "personal": false, "max_chars": 16},
     {"id": "out", "kind": "text", "short": "blown out", "prompt": "Blown out", "personal": false, "max_chars": 16},
     {"id": "answer", "kind": "text", "short": "how it went", "prompt": "How did it go?", "personal": false, "max_chars": 200}

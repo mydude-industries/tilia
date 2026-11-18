@@ -169,8 +169,8 @@
     candle.style.setProperty("--burnt", "0px");
     CandleFlame.setBurn(0);
     main.classList.remove("lit", "out", "rising");
-    title.textContent = "What's this candle for?";
-    lead.textContent = "A few words for it. Then light it, and come back to blow it out when it's done.";
+    title.textContent = "Set your intention";
+    lead.textContent = "Write it, light the candle, and come back to blow it out when it's done.";
     say.textContent = "";
     hint.textContent = "";
     field.value = "";
