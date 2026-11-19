@@ -170,7 +170,7 @@
     CandleFlame.setBurn(0);
     main.classList.remove("lit", "out", "rising");
     title.textContent = "Set your intention";
-    lead.textContent = "Write it, light it, and come back to blow it out when it's done.";
+    lead.textContent = "";
     say.textContent = "";
     hint.textContent = "";
     field.value = "";
