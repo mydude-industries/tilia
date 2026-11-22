@@ -39,6 +39,7 @@
   CandleFollow.init(follow, picked);
 
   var state = "loading";   // loading | unlit | rising | lit | out | sent
+  var LIT_SAY = "It's lit. One breath before you go.", CUE = "It's lit. Watch the smoke.";
   var sent = null;         // the answered candle, as restore() gives it, to send again
   var micOn = false, loud = 0;
   // lit: { litAt, intention, now, later, spelled }: now, Tilia's line once the smoke spelled
@@ -213,7 +214,7 @@
     main.classList.remove("out", "rising"); main.classList.add("lit");
     title.textContent = intention || "Before the hard thing";
     lead.textContent = "Come back and blow it out when it's done.";
-    say.textContent = !already ? "It's lit. One breath before you go."
+    say.textContent = !already ? LIT_SAY
       : f >= 1 ? "It burned down while you were away. It's still here when you're ready."
         : "Still burning. Blow it out when it's done.";
     hint.textContent = micOn ? "Listening." : "";
@@ -234,11 +235,17 @@
     // a late reopen (R9) asks only for the blow-out line: no wisp, nothing spelled now
     var late = !CandleVoice.speaksNow(mine.litAt, Date.now());
     stopWisp = late ? null : CandleSmoke.gather();
+    if (!late) say.textContent = CUE;              // the first line points at the smoke's answer
     CandleVoice.ask({ relay: voice.relay, mac: voice.mac, k: voice.k, id: launch.id,
                       intention: mine.intention }).then(function (lines) {
       if (seq !== askSeq) return;
       var still = state === "lit" && lit === mine;
-      if (!lines) { if (still && stopWisp) stopWisp(); stopWisp = null; return; }
+      if (!lines) {
+        if (still && stopWisp) stopWisp();
+        if (still && say.textContent === CUE) say.textContent = LIT_SAY;   // no answer: the plain line
+        stopWisp = null;
+        return;
+      }
       mine.later = lines.later;                  // kept for blow-out, if it's still to come
       if (still && !CandleVoice.speaksNow(mine.litAt, Date.now())) {
         if (stopWisp) stopWisp();                // past 10 min: never spelled (R9)
