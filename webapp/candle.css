@@ -56,11 +56,13 @@
   /* ---- words */
   .head, .say, .quiet, .meter, .tap, .follow, .note { position: relative; z-index: 1; }
   .head { text-align: center; padding: 8px 0 0; transition: opacity var(--warm), transform var(--warm); }
-  .kicker { font: 600 23px/1.15 var(--sans); letter-spacing: .22em; text-transform: uppercase; color: var(--gold);
-    opacity: .92; margin: 0 0 14px; }
+  .kicker { font: italic 400 17px/1.45 var(--serif); letter-spacing: .01em; color: #d4b779;
+    max-width: 26ch; margin: 0 auto 6px; text-wrap: balance; }
   h1 { font-weight: 400; font-style: italic; font-size: 21px; line-height: 1.3; letter-spacing: .005em;
     color: #ddd7c9; margin: 0 0 8px; }
   h1:empty { display: none; }
+  /* the invitation has done its job once it's lit: the intention takes the top */
+  .lit .kicker, .out .kicker { display: none; }
   .lead { color: var(--muted); font-size: 15px; line-height: 1.55; max-width: 30ch; margin: 0 auto; }
   /* lit: the words step back from the flame; out: they leave the room for the smoke */
   .lit .head { opacity: .55; }
@@ -125,7 +127,7 @@
   .follow.on { opacity: 1; }
 
   /* ---- the candle */
-  .candle { position: relative; z-index: 0; width: 60px; height: 190px; margin: 40px auto 24px;
+  .candle { position: relative; z-index: 0; width: 60px; height: 190px; margin: 0 auto 24px;
     -webkit-tap-highlight-color: transparent; cursor: pointer;
     transition: transform var(--warm), opacity var(--warm); }
   .out .candle { transform: translateY(4px); opacity: .9; transition: transform var(--cool), opacity var(--cool); }
