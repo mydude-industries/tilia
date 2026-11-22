@@ -8,7 +8,7 @@
 <meta name="robots" content="noindex">
 <title>Tilia · candle</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="candle.css?v=13">
+<link rel="stylesheet" href="candle.css?v=14">
 <link rel="stylesheet" href="candle-follow.css?v=9">
 </head>
 <body>
@@ -16,7 +16,7 @@
   <div class="room" aria-hidden="true"><i class="glow"></i><i class="grain"></i></div>
   <div class="head" id="head">
     <p class="kicker" id="kicker">A small ritual</p>
-    <h1 id="title">Set your intention</h1>
+    <h1 id="title"></h1>
     <p class="lead" id="lead"></p>
   </div>
   <canvas id="fx" aria-hidden="true"></canvas>
@@ -105,9 +105,10 @@
 
   <p class="say" id="say"></p>
   <form class="ask" id="ask" autocomplete="off" hidden>
+    <label class="ask-title" for="field">Set your intention</label>
     <div class="ask-line">
       <input class="ask-field" id="field" type="text" maxlength="60" enterkeyhint="go"
-        autocapitalize="sentences" placeholder="Let go of what I can’t control…" aria-label="Your intention">
+        autocapitalize="sentences" placeholder="Let go of what I can’t control…">
     </div>
     <button type="submit" class="tap go" id="light" disabled>Light it</button>
   </form>
@@ -129,6 +130,6 @@
 <script src="candle-seal.js?v=1"></script>
 <script src="candle-voice.js?v=3"></script>
 <script src="candle-follow.js?v=10"></script>
-<script src="candle.js?v=19"></script>
+<script src="candle.js?v=20"></script>
 </body>
 </html>
