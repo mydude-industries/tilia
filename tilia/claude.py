@@ -77,25 +77,28 @@ def _attempt(prompt: str, model: str, system: str, run, timeout: int, cwd: str) 
 
 
 def _call_with_retry(prompt: str, model: str, system: str, run, timeout: int,
-                     cwd: str) -> str | None:
-    """Retry once on timeout/failure; limit, auth and missing-CLI errors propagate at once."""
-    for attempt in range(2):
+                     cwd: str, retry: bool = True) -> str | None:
+    """Retry once on timeout/failure (unless retry is False); limit, auth and missing-CLI
+    errors propagate at once."""
+    tries = 2 if retry else 1
+    for attempt in range(tries):
         try:
             return _attempt(prompt, model, system, run, timeout, cwd)
         except (LimitError, NotLoggedIn, MissingCLI):
             raise
         except (subprocess.TimeoutExpired, RuntimeError, OSError):
-            if attempt == 1:
+            if attempt == tries - 1:
                 raise
     return None  # unreachable
 
 
 def run_claude(prompt: str, model: str, system: str, run=subprocess.run,
-               timeout: int = TIMEOUT_S) -> str:
-    """Raw result text. Raises LimitError, NotLoggedIn, MissingCLI, or RuntimeError."""
+               timeout: int = TIMEOUT_S, retry: bool = True) -> str:
+    """Raw result text. Raises LimitError, NotLoggedIn, MissingCLI, or RuntimeError.
+    retry=False makes one attempt only (a caller with its own deadline)."""
     cwd = str(paths.claude_cwd())  # raises RuntimeError (no call made) if it isn't private
     try:
-        text = _call_with_retry(prompt, model, system, run, timeout, cwd)
+        text = _call_with_retry(prompt, model, system, run, timeout, cwd, retry)
     except (subprocess.TimeoutExpired, OSError) as e:
         raise RuntimeError(f"claude failed: {type(e).__name__}") from e
     if text is None:

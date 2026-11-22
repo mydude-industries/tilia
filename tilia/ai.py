@@ -8,12 +8,16 @@ from . import claude, codex, config
 from .claude import LimitError, MissingCLI, NotLoggedIn, UnsupportedCLI  # noqa: F401
 
 
-def run_model(cfg, prompt: str, system: str, run=subprocess.run, timeout: int | None = None) -> str:
-    """Raw answer text. Raises LimitError, NotLoggedIn, MissingCLI, or RuntimeError."""
+def run_model(cfg, prompt: str, system: str, run=subprocess.run, timeout: int | None = None,
+              retry: bool = True) -> str:
+    """Raw answer text. Raises LimitError, NotLoggedIn, MissingCLI, or RuntimeError.
+    retry=False: one attempt, no retry after a timeout or failure."""
     model = config.active_model(cfg)
     if cfg.provider == "chatgpt":
-        return codex.run(prompt, model, system, run=run, timeout=timeout or codex.TIMEOUT_S)
-    return claude.run_claude(prompt, model, system, run=run, timeout=timeout or claude.TIMEOUT_S)
+        return codex.run(prompt, model, system, run=run, timeout=timeout or codex.TIMEOUT_S,
+                         retry=retry)
+    return claude.run_claude(prompt, model, system, run=run,
+                             timeout=timeout or claude.TIMEOUT_S, retry=retry)
 
 
 def ask_json(cfg, prompt: str, system: str, run=subprocess.run) -> dict | None:

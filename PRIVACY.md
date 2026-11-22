@@ -128,8 +128,17 @@ the same 7-day clearing applies.
 your data. While Tilia is running, your messages, profile and texts go
 nowhere except `api.telegram.org` and your local AI command (`claude` or
 `codex`). (The worksheet page comes from GitHub to your phone, as above; your Mac
-still talks only to Telegram and your AI.) There is no analytics and no telemetry. Tilia on one Mac never
+talks only to Telegram, your AI, and the candle relay if you set one up, below.) There is no analytics and no telemetry. Tilia on one Mac never
 connects to Tilia on another.
+
+**The candle relay, if you set one up.** This is off until you run `./setup relay`.
+Then a lit candle can hear back from Tilia: the candle page seals your intention for
+your Mac, the relay you named carries it, and your Mac seals Tilia's two lines back.
+The relay sees only sealed blobs it cannot read, when they come and go, the IP addresses
+of your phone and your Mac, and which Mac an ask is for. It never sees your words,
+Tilia's lines, or any key: your Mac's private key and the relay secret stay in your Mac's
+Keychain. It keeps everything in memory only, for 120 seconds at most, and writes none of
+it to disk. Whoever runs the relay server can see that much, so run your own.
 
 Two other times Tilia's tools touch the internet. Neither sends your data:
 
@@ -180,7 +189,7 @@ everyone, so a shared account means shared data.
 Then give your own AI this prompt, in this folder, on your own Mac:
 
 <!-- audit-prompt -->
-Read this entire project. Tell me plainly: does it send my data anywhere other than api.telegram.org and the local AI command (`claude` or `codex`)? Could anyone other than me read my conversations, profile or texts? Point to the exact files and lines for every network call and every place data is written.
+Read this entire project. Tell me plainly: does it send my data anywhere other than api.telegram.org, the local AI command (`claude` or `codex`), and the candle relay address I set with `./setup relay` (if I did)? Is what goes to that relay sealed so the relay can't read it? Could anyone other than me read my conversations, profile or texts? Point to the exact files and lines for every network call and every place data is written.
 <!-- /audit-prompt -->
 
 Run it with your own Claude or ChatGPT, on your own Mac. Do not ask the author

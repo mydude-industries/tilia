@@ -145,3 +145,19 @@ def test_no_module_but_ai_calls_a_runner_directly():
                     and isinstance(node.value, ast.Name) and node.value.id in ("claude", "codex"):
                 offenders.append(f"{f.name}: {node.value.id}.{node.attr}")
     assert offenders == []
+
+
+@pytest.mark.parametrize("provider", ["claude", "chatgpt"])
+@pytest.mark.parametrize("retry,attempts", [(True, 2), (False, 1)])
+def test_retry_false_makes_one_attempt_on_timeout(provider, retry, attempts):
+    import subprocess
+    calls = []
+
+    def run(cmd, **kw):
+        if cmd[1:2] == ["--version"]:
+            return SimpleNamespace(stdout="codex-cli 0.167.0", stderr="", returncode=0)
+        calls.append(cmd)
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+    with pytest.raises(RuntimeError):
+        ai.run_model(Config(provider=provider), "p", "s", run=run, timeout=5, retry=retry)
+    assert len(calls) == attempts

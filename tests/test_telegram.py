@@ -183,3 +183,18 @@ def test_markup_only_on_last_part():
     assert len(post.calls) == 2
     assert "reply_markup" not in post.calls[0][1]
     assert json.loads(post.calls[1][1]["reply_markup"]) == {"remove_keyboard": True}
+
+
+def test_send_photo_by_url():
+    post = FakePost({"ok": True, "result": {}})
+    t = Telegram(TOKEN, post=post)
+    url = "https://example.github.io/tilia/v0.2.2/tarot/17-the-star.webp"
+    assert t.send_photo(7, url, "Pulled this one for you.") is True
+    [(called, params, _)] = post.calls
+    assert called.endswith("/sendPhoto")
+    assert params == {"chat_id": 7, "photo": url, "caption": "Pulled this one for you."}
+    # an explicit refusal: the caller may send something else
+    assert Telegram(TOKEN, post=FakePost({"ok": False})).send_photo(7, url, "x") is False
+    # no answer (timeout, network): maybe delivered, so the caller must not send it twice
+    assert Telegram(TOKEN, post=FakePost(exc=OSError("down"))).send_photo(7, url, "x") is None
+    assert Telegram(TOKEN, post=FakePost(exc=TimeoutError())).send_photo(7, url, "x") is None

@@ -4,12 +4,13 @@ send it only if a second call judges it not generic."""
 from __future__ import annotations
 
 import json
+import random
 import re
 import subprocess
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from . import ai, coach, entries, outbox, paths, profile, texts, worksheets
+from . import ai, coach, entries, outbox, paths, profile, texts, webapp, worksheets
 from .coach import DATA_NOTE, _hm, _tag
 
 SIGNAL_FRESH = timedelta(hours=24)
@@ -26,11 +27,16 @@ CRISIS_RECENT = coach.EPISODE_GAP + timedelta(hours=72)  # episode ended within 
 CRISIS_IN_CONVO = "This conversation included a crisis moment; the episode is over."
 CRISIS_LATELY = "A conversation in the last few days included a crisis moment; the episode is over."
 CONVO_SCAN = 200          # turns searched for the last conversation
-CARD_EVERY = timedelta(days=7)  # an unopened card counts too
+# Tilia's own offers (rituals phase 1, D1): about every 3 days, counting only what Tilia sent
+# on its own (source "checkin"), opened or not. Cards they ask for never move this timer.
+OFFER_EVERY = timedelta(days=3)
 CARD_AFTER_CRISIS = coach.EPISODE_GAP + timedelta(hours=96)  # episode ended over 96 h ago
-CARD_TYPES = entries.CARD_TYPES  # spreads count as cards: one a week, whatever kind
+CARD_TYPES = entries.CARD_TYPES  # spreads count as cards, whatever kind
 SPREAD_EVERY = 4  # at most every 4th card offer is a spread (D13: keep it light)
 CHECKIN_SPREAD = "spread_three"
+STYLES = entries.STYLES  # D2: never the same style twice in a row
+NO_BUTTON = ("gift", "draw")  # R6: the styles that leave a burning candle's Open button alone
+_LAST_STYLE = "offer_last_style"
 _STATE, _USED = "checkin_state", "used_signal_ids"
 _USED_KEYS = "used_checkin_keys"  # followup / care keys that already fired
 
@@ -58,6 +64,9 @@ class Candidate:
     #                 or "k:<date>" (card)
     prio: int = 9
     at: str = ""
+    style: str = ""  # a `card` offer only: its delivery style (STYLES), kind and cards
+    kind: str = ""
+    card: str = ""
 
 
 # ---- small state -----------------------------------------------------------
@@ -327,41 +336,144 @@ def _card_type(store) -> str:
     return "tarot"
 
 
-def _card_cand(store, cfg, now) -> Candidate | None:
-    """Now and then a card or a blot, sent first (D7). Never within a week of another one
-    (opened or not), never in or within 96 h after a crisis episode, never after a
-    struggling turn: a card in a dark moment reads as a cruel joke. Never on a fresh
-    install either: like care, it needs them to have written at least once."""
+def _open_styles(store) -> list[str]:
+    """The styles this deck and these sheets can deliver. Gift, pick and draw are tarot (a
+    draw's spread falls back to one card); quick is a blot; ritual is whatever _card_type
+    deals, if its sheet is there."""
+    types = entries.available_types()
+    tarot = bool(entries.available_cards()) and "tarot" in types
+    ok = {"gift": tarot, "pick": tarot, "draw": tarot, "quick": "blot" in types,
+          "ritual": _card_type(store) in types}
+    return [s for s in STYLES if ok[s]]
+
+
+def _day_rng(store, now) -> random.Random:
+    """Seeded by the day and the last style, so every tick of one day sees the same offer."""
+    return random.Random(f"{now.astimezone().date().isoformat()}|{store.get_meta(_LAST_STYLE)}")
+
+
+def _choose_style(store, now, open_) -> str | None:
+    """Any open style but the last one sent (D2)."""
+    last = store.get_meta(_LAST_STYLE)
+    choices = [s for s in open_ if s != last]
+    return _day_rng(store, now).choice(choices) if choices else None
+
+
+def _spread_ok() -> bool:
+    return (CHECKIN_SPREAD in entries.available_types()
+            and len(entries.available_cards()) >= len(entries.SPREADS[CHECKIN_SPREAD]))
+
+
+def _kind_for(style, store, rng) -> str:
+    """Which kinds take which styles (spec D2): gift and pick a single tarot card, Tilia's
+    draw a card or a three-card spread, quick a blot, ritual as _card_type deals it."""
+    if style in ("gift", "pick"):
+        return "tarot"
+    if style == "draw":
+        return rng.choice(("tarot", CHECKIN_SPREAD)) if _spread_ok() else "tarot"
+    if style == "quick":
+        return "blot"
+    return _card_type(store)
+
+
+def _card_names(card: str) -> str:
+    return ", ".join((entries.card_info(i) or {}).get("name", i) for i in entries.card_ids(card))
+
+
+_RITUAL_WHAT = {
+    "tarot": "a tarot card, drawn for them (they read it first, then you)",
+    "blot": "an ink blot, made for them (they say what they see, then you respond)",
+    CHECKIN_SPREAD: "a small three-card spread, drawn for them (they read each card first, "
+                    "then you)",
+}
+_LIGHT = ("Write one light line, nothing more: nothing heavy, no question about their "
+          "feelings, no assignment, nothing it predicts. If your most recent state was "
+          "struggling, return no message.")
+
+
+def _offer_context(style, kind, card) -> str | None:
+    if style == "gift":
+        return (f"It's been a few days, so you're sending them a card as a small `gift`: "
+                f"{_card_names(card)}. Its picture goes straight into the chat with your line "
+                "as the caption. No button, nothing to fill in, nothing they owe you. "
+                + _LIGHT)
+    if style == "pick":
+        return ("It's been a few days, so you have a small game for them, `pick` one: three "
+                "tarot cards face down; they tap one and it turns over. It rides as a button "
+                "under your message. Invite them to pick one. " + _LIGHT)
+    if style == "draw":
+        what = "a card" if kind == "tarot" else "a three-card spread"
+        return (f"It's been a few days, so this is your own `draw`: you pulled {what} "
+                f"({_card_names(card)}) thinking about their week, and your own short read "
+                "of it goes right after your line, in the same message. No button. Your line "
+                "only introduces it: don't write the read or say what it means. " + _LIGHT)
+    if style == "quick":
+        return ("It's been a few days, so you have a `quick` blot for them: one fresh ink "
+                "blot and one question, what they see first. It rides as a button under your "
+                "message. Never call it a test. " + _LIGHT)
+    what = _RITUAL_WHAT.get(kind)
+    if what is None:  # a card type with no invite wording: never mislabel it, just skip
+        return None
+    return (f"It's been a while, so you have {what}, the full `ritual`. It rides as a button "
+            "under your message. Write one light line inviting them to look, nothing more: "
+            "nothing heavy, no question about their feelings, no assignment. If your most "
+            "recent state was struggling, return no message.")
+
+
+def _answered_struggling(turns) -> bool:
+    """Was the coach's answer to their latest answered message struggling (R7)? The coach
+    stores its reply right after the user turns it answers (coach.respond, worksheets
+    give_up), so the answer is the turn straight after a user turn. Tilia's own check-ins
+    are coach turns too, always "ok", and never follow a user turn directly (a check-in
+    waits while a message is pending), so a morning check-in can't clear a struggling
+    evening; only a later answered message can. A user turn still waiting for its answer
+    leaves the previous answer standing."""
+    for i in range(len(turns) - 2, -1, -1):
+        if turns[i].role == "user" and turns[i + 1].role == "coach":
+            return turns[i + 1].state == "struggling"
+    return False
+
+
+def _offer_cand(store, cfg, now) -> Candidate | None:
+    """Now and then something to look at, sent first (D7; rituals phase 1, D1-D2). Never
+    within OFFER_EVERY of Tilia's last own offer (opened or not; cards they asked for don't
+    count), never in or within 96 h after a crisis episode, never after a struggling turn: a
+    card in a dark moment reads as a cruel joke. Never on a fresh install either: like care,
+    it needs them to have written at least once. Its style rotates (never the same twice in
+    a row); the kind and the cards are chosen here, the same for every tick of the day.
+    While a candle may be burning (open, lit under 8 h ago) only a gift or a draw goes out:
+    a button would replace the one that reopens the candle (R6); neither, and no offer."""
     if not (cfg.cards and cfg.worksheets):
         return None
     turns = store.recent_turns(CONVO_SCAN)
     if not any(t.role == "user" for t in turns):
         return None
-    if any(now - datetime.fromisoformat(e.created) < CARD_EVERY
+    if any(e.source == "checkin" and now - datetime.fromisoformat(e.created) < OFFER_EVERY
            for e in store.entries(types=CARD_TYPES)):
         return None
     if _recent_crisis(store, now, CARD_AFTER_CRISIS):
         return None
-    last_coach = next((t for t in reversed(turns) if t.role == "coach"), None)
-    if last_coach is not None and last_coach.state == "struggling":
+    if _answered_struggling(turns):
         return None
-    type_ = _card_type(store)
-    if type_ not in entries.available_types():  # no sheet, no button: nothing to invite to
+    open_ = _open_styles(store)
+    if worksheets.lit_candle(store, now) is not None:  # R6: keep its Open button in place
+        open_ = [s for s in open_ if s in NO_BUTTON]
+    style = _choose_style(store, now, open_)
+    if style is None:  # no sheet, no deck: nothing to offer
         return None
-    what = {"tarot": "a tarot card, drawn for them (they read it first, then you)",
-            "blot": "an ink blot, made for them (they say what they see, then you respond)",
-            CHECKIN_SPREAD: "a small three-card spread, drawn for them (they read each card "
-                            "first, then you)",
-            }.get(type_)
-    if what is None:  # a card type with no invite wording: never mislabel it, just skip
+    rng = _day_rng(store, now)
+    kind = _kind_for(style, store, rng)
+    if kind not in entries.available_types():
         return None
-    return Candidate(
-        "card",
-        f"It's been a while, so you have {what}. It rides as a button under your message. "
-        "Write one light line inviting them to look, nothing more: nothing heavy, no "
-        "question about their feelings, no assignment. If your most recent state was "
-        "struggling, return no message.",
-        f"k:{now.astimezone().date().isoformat()}", _PRIO["card"], "")
+    card = ""
+    if style in ("gift", "draw"):  # drawn now, so the line can fit the card
+        n = len(entries.SPREADS.get(kind, [None]))
+        card = ".".join(c["id"] for c in rng.sample(entries.available_cards(), n))
+    ctx = _offer_context(style, kind, card)
+    if ctx is None:
+        return None
+    return Candidate("card", ctx, f"k:{now.astimezone().date().isoformat()}", _PRIO["card"], "",
+                     style=style, kind=kind, card=card)
 
 
 def candidates(store, cfg, now) -> list[Candidate]:
@@ -375,7 +487,7 @@ def candidates(store, cfg, now) -> list[Candidate]:
     if not cands:  # before the availability filter: a reason tried or deferred today still counts
         care = _care_cand(store, cfg, now)
         cands = [care] if care else []
-    card = _card_cand(store, cfg, now)
+    card = _offer_cand(store, cfg, now)
     if card:  # the lowest: its empty `at` loses every tie, care's included
         cands.append(card)
     cands = [c for c in cands if ok(c)]
@@ -559,12 +671,10 @@ def _defer(store, c: Candidate, now, until) -> None:
 
 
 def _offer(store, cfg, now, c: Candidate, run):
-    """The button that rides with a check-in, if any: a fresh card or blot for `card`, the
-    open worksheet of a due worksheet assignment. An intent check-in that follows up an
-    entry's plan marks that entry, so the mirror shows plan -> what happened."""
+    """The button that rides with a check-in, if any: the open worksheet of a due worksheet
+    assignment. An intent check-in that follows up an entry's plan marks that entry, so the
+    mirror shows plan -> what happened. (A `card` offer goes through _send_offer.)"""
     kind, _, ref = c.key.partition(":")
-    if c.reason == "card":
-        return worksheets.prepare(store, cfg, now, _card_type(store), source="checkin", run=run)
     if kind == "a":
         a = next((a for a in store.open_assignments() if a.id == int(ref)), None)
         if a is not None and a.kind == "worksheet":
@@ -572,7 +682,7 @@ def _offer(store, cfg, now, c: Candidate, run):
                       if e.assignment_id == a.id), None)
             if e is not None:
                 try:
-                    return worksheets.offer_for(store, e)
+                    return worksheets.offer_for(store, e, cfg)
                 except ValueError:  # its sheet is gone: the nudge goes without a button
                     return None
     elif kind == "s":
@@ -582,7 +692,74 @@ def _offer(store, cfg, now, c: Candidate, run):
     return None
 
 
-def maybe_send(store, cfg, now, run=subprocess.run) -> bool:
+def _sent(store, c: Candidate, msg: str, turn: str, now, style: str = "") -> None:
+    store.add_checkin(c.reason, msg, True)
+    store.add_turn("coach", turn, "ok")
+    if style:  # a card offer: the rotation remembers what they actually got
+        store.set_meta(_LAST_STYLE, style)
+    _consume(store, c, now, sent=True, final=True)
+
+
+class _Skip(Exception):
+    """Inside _send_offer's transaction: nothing can go out today, roll the entry back."""
+
+
+def _send_offer(store, cfg, now, c: Candidate, msg: str, run, tg) -> bool:
+    """Deliver a `card` offer in its style. A gift goes straight to Telegram as a photo of
+    the card's public art (it can't wait in the outbox, which only carries text). Only an
+    explicit refusal (Telegram answered not-ok, or no Telegram or art here) falls back, the
+    same day and with the same card the line named: to the full ritual's button, or to a
+    draw when a button isn't allowed (the last offer was a ritual, or a candle is lit, R6).
+    No answer at all (a timeout) may still have delivered the photo, so it counts as sent
+    and nothing follows it. A draw's read is written now and sent with the line; with no
+    read it becomes the ritual's button, or, when a button isn't allowed, nothing is sent
+    today. Gift and draw entries are complete when sent; every style leaves an entry (D3)."""
+    style = c.style
+    button_ok = (worksheets.lit_candle(store, now) is None
+                 and store.get_meta(_LAST_STYLE) != "ritual")
+    if style == "gift":
+        info = entries.card_info(c.card)
+        got = (tg.send_photo(cfg.chat_id, webapp.art_url(info["file"]), msg)
+               if info is not None and tg is not None and cfg.chat_id is not None else False)
+        if got is not False:  # True, or None: no answer, so maybe delivered; never twice
+            with store.atomic():
+                store.add_entry(c.kind, entries.new_token(), "checkin", card=c.card,
+                                status="done", style="gift", turn_id=store.last_turn_id())
+                _sent(store, c, msg, f"{msg}\n[sent with the picture of {info['name']}]", now,
+                      "gift")
+            return True
+        style = "ritual" if button_ok else "draw"  # the same card either way
+    try:
+        with store.atomic():
+            text, offer = msg, None
+            if style == "draw":
+                eid = store.add_entry(c.kind, entries.new_token(), "checkin", card=c.card,
+                                      style="draw", turn_id=store.last_turn_id())
+                worksheets.seal(store, cfg, now, store.get_entry(eid), run, share=True)
+                e = store.get_entry(eid)
+                if e.sealed_read:
+                    store.finish_entry(eid, None, [], e.turn_id)
+                    text = f"{msg}\n\n{e.sealed_read}"
+                elif not button_ok:
+                    raise _Skip  # no read, and a button would bury a candle's or repeat a ritual
+                else:  # no read to share: they get the card to read themselves
+                    style = "ritual"
+                    store.set_entry_style(eid, style)
+                    offer = worksheets.offer_for(store, store.get_entry(eid), cfg)
+            else:
+                offer = worksheets.prepare(store, cfg, now, c.kind, source="checkin",
+                                           style=style, card=c.card or None, run=run)
+                if offer is None:  # the sheet went unreadable: no card to send
+                    raise _Skip
+            outbox.enqueue(store, text, now, markup=offer.markup if offer else None)
+            _sent(store, c, msg, text, now, style)
+    except _Skip:
+        _consume(store, c, now, sent=False, final=True)
+        return False
+    return True
+
+
+def maybe_send(store, cfg, now, run=subprocess.run, tg=None) -> bool:
     """At most one draft and one generic test. True only if a check-in was queued.
     LimitError / NotLoggedIn / MissingCLI propagate to the loop.
 
@@ -590,8 +767,10 @@ def maybe_send(store, cfg, now, run=subprocess.run) -> bool:
     as sent (sent=1, a coach turn, its signal used) when queued. Only silence or a
     not-before time leave the reason for later; a generic draft retires it.
 
-    A `card` check-in that passes makes one more AI call: a tarot card's sealed read
-    (worksheets.prepare -> seal), inside the transaction. Its failure never stops the card."""
+    A `card` check-in that passes makes one more AI call for a tarot card or spread: its
+    sealed read (worksheets.prepare -> seal), or Tilia's own shared read for a draw, inside
+    the transaction. Its failure never stops the card. A gift is sent here through `tg`
+    (see _send_offer)."""
     if _blocked(store, cfg, now):
         return False
     cands = candidates(store, cfg, now)
@@ -613,13 +792,10 @@ def maybe_send(store, cfg, now, run=subprocess.run) -> bool:
         store.add_checkin(c.reason, msg, False)  # generic, or no clear verdict: discard
         _consume(store, c, now, sent=False, final=True)
         return False
+    if c.reason == "card":
+        return _send_offer(store, cfg, now, c, msg, run, tg)
     with store.atomic():
         offer = _offer(store, cfg, now, c, run)
-        if c.reason == "card" and offer is None:  # the sheet went unreadable: no card to send
-            _consume(store, c, now, sent=False, final=True)
-            return False
         outbox.enqueue(store, msg, now, markup=offer.markup if offer else None)
-        store.add_checkin(c.reason, msg, True)
-        store.add_turn("coach", msg, "ok")
-        _consume(store, c, now, sent=True, final=True)
+        _sent(store, c, msg, msg, now)
     return True

@@ -58,3 +58,37 @@ def test_spread_card_value_is_dotted_ids():
         for v in vals:
             assert VALUE.fullmatch(v)
     assert not VALUE.fullmatch("00-the-fool.Riley said")  # dots join ids, nothing else
+
+
+# ---- the candle's relay params (candle voice, Task 4) ---------------------------------
+
+RELAY = ("https://relay.example.com/tilia", "sam-mac-01", "MIIBIjAN-_abc")
+
+
+def test_candle_url_carries_relay_only_when_set():
+    u = webapp.launch_url("candle", TOKEN, relay=RELAY)
+    q = parse_qs(urlsplit(u).query)
+    assert q["relay"] == ["https://relay.example.com/tilia"]
+    assert q["mac"] == ["sam-mac-01"] and q["k"] == ["MIIBIjAN-_abc"]
+    assert "relay=https%3A%2F%2Frelay.example.com%2Ftilia" in u  # url-encoded in the query
+    plain = webapp.launch_url("candle", TOKEN)
+    assert not {"relay", "mac", "k"} & set(parse_qs(urlsplit(plain).query))
+
+
+def test_non_candle_urls_unchanged():
+    for t in ("check_story", "tarot", "blot"):
+        assert webapp.launch_url(t, TOKEN, relay=RELAY) == webapp.launch_url(t, TOKEN)
+
+
+def test_relay_params_from_config():
+    from tilia.config import Config
+    assert webapp.relay_params(Config()) is None
+    assert webapp.relay_params(Config(relay_url="https://r.example.com", relay_id="x")) is None
+    cfg = Config(relay_url="https://r.example.com", relay_id="sam-mac-01", relay_public="AB-_")
+    assert webapp.relay_params(cfg) == ("https://r.example.com", "sam-mac-01", "AB-_")
+
+
+def test_relay_query_encoding_matches_urllib():
+    from urllib.parse import quote
+    for s in ("https://r.example.com:8443/a b/ü?x=1&y", "sam-mac-01", "AB-_~.z"):
+        assert webapp._q(s) == quote(s, safe="")

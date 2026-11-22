@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY, at TEXT NOT NULL, cha
 CREATE TABLE IF NOT EXISTS corrections(id INTEGER PRIMARY KEY, at TEXT NOT NULL, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS journal(id INTEGER PRIMARY KEY, at TEXT NOT NULL, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pending(id INTEGER PRIMARY KEY, at TEXT NOT NULL, text TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source TEXT NOT NULL, created TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', wording TEXT, answers TEXT, answered_at TEXT, reply TEXT, sealed_read TEXT, card TEXT, seed INTEGER, assignment_id INTEGER, turn_id INTEGER, mood_before INTEGER, mood_after INTEGER, outcome INTEGER, themes TEXT, followup_signal INTEGER, followup_at TEXT);
+CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, type TEXT NOT NULL, source TEXT NOT NULL, created TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', wording TEXT, answers TEXT, answered_at TEXT, reply TEXT, sealed_read TEXT, card TEXT, seed INTEGER, assignment_id INTEGER, turn_id INTEGER, mood_before INTEGER, mood_after INTEGER, outcome INTEGER, themes TEXT, followup_signal INTEGER, followup_at TEXT, style TEXT, voice_now TEXT, voice_later TEXT, voice_seen INTEGER);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 TABLES = ["turns", "assignments", "checkins", "text_cursor", "text_msgs",
@@ -71,6 +71,10 @@ class Entry:
     themes: list[str]
     followup_signal: int | None
     followup_at: str | None
+    style: str | None = None  # how a proactive offer was delivered (entries.STYLES); NULL before
+    voice_now: str | None = None    # a candle's two lines from Tilia (tilia/voice.py)
+    voice_later: str | None = None
+    voice_seen: int | None = None   # which of them the page says it spelled (entries.SEEN_*)
 
 
 def _loads(s):
@@ -103,12 +107,22 @@ class Store:
         cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(text_msgs)")]
         if "read_at" not in cols:
             self._conn.execute("ALTER TABLE text_msgs ADD COLUMN read_at TEXT")
+        cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(entries)")]
+        if "style" not in cols:
+            self._conn.execute("ALTER TABLE entries ADD COLUMN style TEXT")
+        for col, kind in (("voice_now", "TEXT"), ("voice_later", "TEXT"),
+                          ("voice_seen", "INTEGER")):
+            if col not in cols:
+                self._conn.execute(f"ALTER TABLE entries ADD COLUMN {col} {kind}")
         self._conn.commit()
         for suffix in ("", "-wal", "-shm"):  # sidecars made before umask 077 was set
             try:
                 Path(str(path) + suffix).chmod(0o600)
             except OSError:
                 pass
+
+    def close(self) -> None:
+        self._conn.close()
 
     def _commit(self):
         if self._depth == 0:
@@ -242,15 +256,17 @@ class Store:
                      _loads(r["wording"]), _loads(r["answers"]), r["answered_at"], r["reply"],
                      r["sealed_read"], r["card"], r["seed"], r["assignment_id"], r["turn_id"],
                      r["mood_before"], r["mood_after"], r["outcome"],
-                     _loads(r["themes"]) or [], r["followup_signal"], r["followup_at"])
+                     _loads(r["themes"]) or [], r["followup_signal"], r["followup_at"],
+                     r["style"], r["voice_now"], r["voice_later"], r["voice_seen"])
 
     def add_entry(self, type, token, source, *, wording=None, card=None, seed=None,
-                  assignment_id=None, turn_id=None, status="open", answers=None) -> int:
+                  assignment_id=None, turn_id=None, status="open", answers=None,
+                  style=None) -> int:
         return self._x(
             "INSERT INTO entries(token,type,source,created,status,wording,answers,card,seed,"
-            "assignment_id,turn_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "assignment_id,turn_id,style) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (token, type, source, self._clock().isoformat(), status, _dumps(wording),
-             _dumps(answers), card, seed, assignment_id, turn_id)).lastrowid
+             _dumps(answers), card, seed, assignment_id, turn_id, style)).lastrowid
 
     def entry_by_token(self, token) -> Entry | None:
         r = self._conn.execute("SELECT * FROM entries WHERE token=?", (token,)).fetchone()
@@ -285,6 +301,18 @@ class Store:
         self._x("UPDATE entries SET status='done', reply=?, themes=?, turn_id=?, "
                 "followup_signal=? WHERE id=?",
                 (reply, _dumps(themes), turn_id, followup_signal, id))
+
+    def set_entry_card(self, id, card) -> None:
+        self._x("UPDATE entries SET card=? WHERE id=?", (card, id))
+
+    def set_entry_voice(self, id, now, later) -> None:
+        self._x("UPDATE entries SET voice_now=?, voice_later=? WHERE id=?", (now, later, id))
+
+    def set_entry_voice_seen(self, id, seen) -> None:
+        self._x("UPDATE entries SET voice_seen=? WHERE id=?", (seen, id))
+
+    def set_entry_style(self, id, style) -> None:
+        self._x("UPDATE entries SET style=? WHERE id=?", (style, id))
 
     def set_entry_followup_at(self, id, at) -> None:
         self._x("UPDATE entries SET followup_at=? WHERE id=?", (at, id))

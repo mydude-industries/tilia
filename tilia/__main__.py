@@ -25,6 +25,8 @@ def _run() -> int:
         return 1
     if cfg.chat_id is None:
         log("not paired yet: every chat is ignored until ./setup pairs your phone")
+    from . import relay
+    relay.start(cfg)  # a daemon thread, only when ./setup relay has run; logs if not
     pw = power.Power(cfg.battery_awake)
     Loop(cfg, store, Telegram(token), power=pw, ac=power.on_ac).run_forever()
     return 0
@@ -53,6 +55,8 @@ def _status() -> int:
     print(f"threads: {len(cfg.threads)}")
     print(f"pending: {store.stats()['pending']}")
     print(f"last turn: {last[0].at if last else 'never'}")
+    if cfg.relay_url:
+        print(f"relay last reached: {store.get_meta('relay_seen') or 'never'}")
     return 0
 
 

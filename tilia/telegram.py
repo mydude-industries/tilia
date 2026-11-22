@@ -135,6 +135,19 @@ class Telegram:
     def send_webapp_button(self, chat_id, text: str, label: str, url: str) -> bool:
         return self.send(chat_id, text, markup=webapp_markup(label, url))
 
+    def send_photo(self, chat_id, photo_url: str, caption: str) -> bool | None:
+        """A picture by its public URL (Telegram fetches it), with a caption. True: sent.
+        False: Telegram answered and refused it (can't fetch it, bad request), so the
+        caller can send something else. None: no answer (timeout, network): Telegram may
+        have delivered it anyway, so the caller must not send it again another way."""
+        try:
+            body = self._call("sendPhoto", {"chat_id": chat_id, "photo": photo_url,
+                                            "caption": caption}, timeout=20)
+        except Exception as e:
+            _log("send_photo", e)
+            return None
+        return body.get("ok") is True
+
     def typing(self, chat_id) -> bool:
         """Show "typing…" in the chat for ~5 s. Never raises."""
         try:

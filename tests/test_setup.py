@@ -92,6 +92,7 @@ class FakeIO:
         self.wall = kw.get("wall", 0.0)  # wall-clock seconds when the question is copied
         self.where_froms = kw.get("where_froms", {})  # file name -> [url, ...]
         self.on_ask = kw.get("on_ask")  # (prompt) -> None, runs before an answer is given
+        self.keychain = dict(kw.get("keychain", {}))  # service -> value (./setup relay)
 
     # terminal
     def input(self, prompt=""):
@@ -189,6 +190,14 @@ class FakeIO:
         if not self.tokens:
             raise RuntimeError("missing")
         return self.tokens[-1]
+
+    def set_secret(self, service, value):
+        self.keychain[service] = value
+
+    def get_secret(self, service):
+        if service not in self.keychain:
+            raise RuntimeError("missing")
+        return self.keychain[service]
 
     def ai_check(self, cfg):
         self.ai_cfgs.append(cfg)
@@ -1289,3 +1298,118 @@ def test_main_restart_agent_subcommand(monkeypatch):
     monkeypatch.setattr(sw, "restart_agent", lambda **kw: seen.append(kw) or 0)
     monkeypatch.setattr(sw, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
     assert sw.main(["restart-agent"]) == 0 and seen == [{}]
+
+
+# ---- ./setup relay (candle voice, Task 4) -----------------------------------------------
+
+def test_setup_relay_stores_secrets_in_keychain_not_config(home):
+    import hashlib
+    import tilia.setup_wizard as sw
+    from tilia import relay
+    io = FakeIO(["http://relay.example.com", "https://relay.example.com/"])
+    assert sw.relay_setup(io) == 0
+    pem = relay.decode_pem(io.keychain[relay.KEY_SERVICE])
+    secret = io.keychain[relay.SECRET_SERVICE]
+    assert pem.startswith("-----BEGIN PRIVATE KEY-----") and len(secret) == 43
+    cfg = config.load()
+    assert cfg.relay_url == "https://relay.example.com"
+    assert len(cfg.relay_id) == 10 and cfg.relay_public
+    text = paths.config_path().read_text()
+    assert secret not in text and "PRIVATE KEY" not in text
+    assert io.keychain[relay.KEY_SERVICE] not in text
+    line = f"{cfg.relay_id}:{hashlib.sha256(secret.encode()).hexdigest()}"
+    assert line in io.text() and "TILIA_RELAY_MACS" in io.text()
+    assert secret not in io.text()  # the secret itself is never shown
+    assert "✗" in io.text()  # the http address was refused first
+
+
+def test_setup_relay_rerun_rotates_only_after_yes(home):
+    import tilia.setup_wizard as sw
+    from tilia import relay
+    io = FakeIO(["https://relay.example.com"])
+    assert sw.relay_setup(io) == 0
+    before = dict(io.keychain)
+    first = config.load()
+    io.inputs = [""]  # default is no
+    assert sw.relay_setup(io) == 0
+    assert io.keychain == before and config.load().relay_public == first.relay_public
+    io.inputs = ["y", ""]  # yes, and keep the address
+    assert sw.relay_setup(io) == 0
+    after = config.load()
+    assert io.keychain[relay.SECRET_SERVICE] != before[relay.SECRET_SERVICE]
+    assert io.keychain[relay.KEY_SERVICE] != before[relay.KEY_SERVICE]
+    assert after.relay_public != first.relay_public
+    assert after.relay_id == first.relay_id and after.relay_url == first.relay_url
+
+
+def test_setup_relay_keychain_failure_saves_nothing(home):
+    import tilia.setup_wizard as sw
+    io = FakeIO(["https://relay.example.com"])
+
+    def broken(service, value):
+        raise RuntimeError("locked")
+    io.set_secret = broken
+    assert sw.relay_setup(io) == 1
+    assert config.load().relay_url == ""
+
+
+def test_setup_main_relay(monkeypatch):
+    import tilia.setup_wizard as sw
+    called = []
+    monkeypatch.setattr(sw, "relay_setup", lambda io: called.append(io) or 0)
+    assert sw.main(["relay"]) == 0 and len(called) == 1
+    assert any("./setup relay" in line for line in sw.REDO_HELP)
+
+
+def test_setup_relay_writes_the_secret_first_and_the_key_last(home):
+    import tilia.setup_wizard as sw
+    from tilia import relay, seal
+    io = FakeIO(["https://relay.example.com"])
+    assert sw.relay_setup(io) == 0
+    first = config.load()
+    order = []
+    real = io.set_secret
+
+    def key_write_fails(service, value):
+        order.append(service)
+        if service == relay.KEY_SERVICE:
+            raise RuntimeError("locked")
+        real(service, value)
+    io.set_secret = key_write_fails
+    io.inputs = ["y", ""]
+    assert sw.relay_setup(io) == 1
+    assert order == [relay.SECRET_SERVICE, relay.KEY_SERVICE]
+    # halfway: the old private key is still there and still matches the saved public half
+    assert config.load().relay_public == first.relay_public
+    assert seal.public_of(relay.decode_pem(io.keychain[relay.KEY_SERVICE])) == first.relay_public
+
+
+def test_setup_relay_keep_checks_the_key_matches(home):
+    import tilia.setup_wizard as sw
+    from tilia import relay, seal
+    io = FakeIO(["https://relay.example.com"])
+    assert sw.relay_setup(io) == 0
+    other_pem, _ = seal.new_keypair()
+    io.keychain[relay.KEY_SERVICE] = relay.encode_pem(other_pem)  # a mismatched pair
+    before = dict(io.keychain)
+    io.inputs = ["n"]
+    assert sw.relay_setup(io) == 1
+    assert "doesn't match" in io.text()
+    assert io.keychain == before  # no: nothing changed
+    io.inputs = ["", ""]  # default yes, and keep the address
+    assert sw.relay_setup(io) == 0
+    cfg = config.load()
+    assert seal.public_of(relay.decode_pem(io.keychain[relay.KEY_SERVICE])) == cfg.relay_public
+    # a matching pair: the ordinary "make new ones?" question, default keep
+    io.inputs = [""]
+    kept = dict(io.keychain)
+    assert sw.relay_setup(io) == 0
+    assert io.keychain == kept and "Kept the keys you have." in io.text()
+
+
+def test_seal_public_of_matches_new_keypair():
+    from tilia import seal
+    pem, public = seal.new_keypair()
+    assert seal.public_of(pem) == public
+    with pytest.raises(seal.SealError):
+        seal.public_of("not a key")

@@ -411,7 +411,7 @@ class Loop:
     def _slow(self, now) -> None:
         worksheets.expire(self.store, now)
         signals.daily_pass(self.store, self.cfg, now, run=self.run)
-        if checkins.maybe_send(self.store, self.cfg, now, run=self.run):
+        if checkins.maybe_send(self.store, self.cfg, now, run=self.run, tg=self.tg):
             self._flush_now(now)
         if patterns.maybe_run(self.store, self.cfg, now, run=self.run):
             self._safe("mirror", lambda n: mirror.write(self.store, n), now)

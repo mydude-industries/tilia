@@ -44,7 +44,8 @@ async function series(prefix, times, start) {
     await page.screenshot({ path: join(outDir, `${prefix}-${ms}.png`) });
   }
 }
-await series("lit", litTimes, () => page.click("#candle"));
+await page.fill("#field", "Sam's call at four");   // Light it waits for a few words
+await series("lit", litTimes, () => page.click("#light"));
 await series("out", outTimes, () => page.click("#candle"));
 await browser.close();
 console.log(`wrote ${litTimes.length + outTimes.length} frames to ${outDir}`);

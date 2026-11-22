@@ -10,6 +10,11 @@ WEB = ROOT / "webapp"
 VENDOR = WEB / "vendor" / "telegram-web-app.js"
 FORBIDDEN = ("http://", "https://", 'src="//', 'href="//', "url(//", "@import")
 SVG_NS = "http://www.w3.org/2000/svg"
+# The candle may reach a relay named in its URL (https, or a dev relay on this machine, R7);
+# a meta CSP can't name that origin, so connect-src allows these and nothing else.
+CANDLE_CONNECT = "connect-src 'self' https: http://127.0.0.1:* http://localhost:*"
+CANDLE_CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+              "script-src 'self'; " + CANDLE_CONNECT)
 
 
 def _own_files():
@@ -23,8 +28,16 @@ def test_webapp_references_no_other_origins():
     for p in files:
         # The SVG namespace is an identifier, never fetched; everything else must be ours.
         text = p.read_text(encoding="utf-8").replace(SVG_NS, "")
+        if p.name == "candle.html":
+            text = text.replace(CANDLE_CONNECT, "")
         for bad in FORBIDDEN:
             assert bad not in text, f"{p.relative_to(ROOT)} contains {bad}"
+
+
+def test_candle_csp_scripts_stay_self():
+    html = (WEB / "candle.html").read_text(encoding="utf-8")
+    assert f'<meta http-equiv="Content-Security-Policy" content="{CANDLE_CSP}">' in html
+    assert "<script>" not in html
 
 
 def test_vendor_header():

@@ -34,7 +34,7 @@ def test_readme_basics():
 
 def test_docs_name_the_setup_reentry_commands():
     for cmd in ("./setup texts", "./setup style", "./setup ai", "./setup import", "./setup bot",
-                "./setup all"):
+                "./setup relay", "./setup all"):
         assert cmd in README
     assert "Run `./setup texts`." in PRIVACY
     assert "Run `./setup` again. It checks" not in PRIVACY
@@ -134,7 +134,7 @@ def test_docs_say_tilia_texts_first_and_how_to_change_it():
 def test_version_is_0_2_3():
     import tomllib
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert meta["project"]["version"] == "0.2.3"
+    assert meta["project"]["version"] == "0.2.4"
 
 
 # ---- worksheets, cards, blots and the mirror ------------------------------------------
@@ -175,4 +175,22 @@ def test_readme_names_the_new_commands_and_the_page():
     for needle in ("/mirror", "/worksheets off", "/cards off", "## Worksheets, cards and blots"):
         assert needle in README
     assert ("The page is served by GitHub to your phone; your Mac still talks only to "
-            "Telegram and your AI.") in FLAT_R
+            "Telegram, your AI, and (if you set one up) your own relay server that passes the "
+            "candle's sealed words.") in FLAT_R
+
+
+def test_privacy_names_the_candle_relay():
+    who = " ".join(PRIVACY.split("## Who can see it", 1)[1].split("\n## ", 1)[0].split())
+    assert "**The candle relay, if you set one up.** This is off until you run `./setup relay`." in who
+    assert "sealed blobs it cannot read" in who and "IP addresses" in who
+    assert "which Mac an ask is for" in who
+    assert "It never sees your words, Tilia's lines, or any key" in who
+    assert "in memory only, for 120 seconds at most" in who
+    assert "the candle relay address I set with `./setup relay`" in setup_wizard._AUDIT_FALLBACK
+
+
+def test_readme_says_the_relay_is_optional():
+    sec = " ".join(README.split("## The candle", 1)[1].split("\n## ", 1)[0].split())
+    assert "It works on its own, silently, with nothing extra to set up." in sec
+    assert "`./setup relay`" in sec and "It is optional." in sec
+    assert "[relay/README.md](relay/README.md)" in sec

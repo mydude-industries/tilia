@@ -87,9 +87,59 @@ test("empty intention allowed: lit, saved, restored and sent without one", () =>
     "About what I expected."));
   assert.deepEqual(p, { v: 1, type: "candle", id: "abcdefghijkl", intention: "",
     lit_at: LIT, out_at: LIT + 2 * H, answer: "About what I expected." });
-  // the smoke says "It's out." when there's nothing of theirs to echo
-  assert.deepEqual(K.echo(""), ["It's out.", "How did it go?"]);
-  assert.deepEqual(K.echo("the call with Riley"), ["the call with Riley", "How did it go?"]);
+});
+
+test("echo with a sealed line", () => {
+  // blow-out spells their words, then the line Tilia sealed for it when it was lit
+  assert.deepEqual(K.echo("the call with Riley", "You went in anyway."),
+    ["the call with Riley", "You went in anyway."]);
+  assert.deepEqual(K.echo("", "You went in anyway."), ["It's out.", "You went in anyway."]);
+  // the old question is gone
+  assert.ok(!K.echo("the call with Riley", "You went in anyway.").includes("How did it go?"));
+});
+
+test("blow-out without a sealed line", () => {
+  // no relay, the Mac asleep, a crisis: just their words, or "It's out." when there are none
+  assert.deepEqual(K.echo("the call with Riley"), ["the call with Riley"]);
+  assert.deepEqual(K.echo(""), ["It's out."]);
+  assert.deepEqual(K.echo("the call with Riley", "   "), ["the call with Riley"]);
+  assert.deepEqual(K.echo(undefined, null), ["It's out."]);
+  // and what goes back carries no lines at all
+  const p = JSON.parse(K.payload({ id: "abcdefghijkl" }, "the call with Riley", LIT, LIT + H, ""));
+  assert.equal("now" in p || "later" in p, false);
+  // with them, both go along (the Mac keeps its own copy and ignores these)
+  const q = JSON.parse(K.payload({ id: "abcdefghijkl" }, "the call with Riley", LIT, LIT + H, "",
+    { now: "Go gently.", later: "You went in anyway." }));
+  assert.equal(q.now, "Go gently.");
+  assert.equal(q.later, "You went in anyway.");
+  // a reopened sent candle keeps the sealed line, so "Send it again" spells and sends it too
+  const s = K.restore(K.pendingValue(LIT, "the call with Riley", LIT + H, "",
+    { now: "Go gently.", later: "You went in anyway." }), LIT + 2 * H);
+  assert.equal(s.later, "You went in anyway.");
+  assert.equal(K.resend({ id: "abcdefghijkl" }, s), JSON.stringify(q));
+});
+
+test("the lit line is kept once spelled, so a reopened candle still sends it", () => {
+  const raw = K.litValue(LIT, "the call with Riley", "You went in anyway.", "Go gently.");
+  const s = K.restore(raw, LIT + H);
+  assert.equal(s.now, "Go gently.");
+  assert.equal(s.later, "You went in anyway.");
+  assert.equal(K.restore(K.litValue(LIT, "x", "y"), LIT + H).now, undefined);
+});
+
+test("Done with nothing typed sends an empty answer", () => {
+  assert.equal(K.cleanAnswer(""), "");
+  assert.equal(K.cleanAnswer("   \n "), "");
+  assert.equal(K.cleanAnswer(undefined), "");
+  assert.equal(K.cleanAnswer("  it went   fine\n"), "it went fine");
+  assert.equal(Array.from(K.cleanAnswer("x".repeat(500))).length, K.ANSWER_MAX);
+  const p = JSON.parse(K.payload({ id: "abcdefghijkl" }, "the call with Riley", LIT, LIT + H,
+    K.cleanAnswer("  ")));
+  assert.equal(p.answer, "");
+  // kept as pending with nothing said, and still readable to send again
+  const s = K.restore(K.pendingValue(LIT, "the call with Riley", LIT + H, ""), LIT + 2 * H);
+  assert.equal(s.state, "sent");
+  assert.equal(s.answer, "");
 });
 
 test("intention is one short line", () => {
@@ -199,9 +249,9 @@ test("answered: the record becomes pending before sending, and reopening offers 
   const bare = K.restore(K.pendingValue(LIT, "", out, "It didn't happen."), out);
   assert.equal(bare.state, "sent");
   assert.equal(JSON.parse(K.resend(launch, bare)).intention, "");
-  // a pending record missing its answer or out time is unreadable: a fresh candle
+  // a pending record missing its answer (an empty one is fine) or out time is unreadable: a fresh candle
   for (const bad of [{ lit_at: LIT, sent: true, answer: "x" }, { lit_at: LIT, sent: true, out_at: out },
-    { lit_at: LIT, sent: true, out_at: out, answer: "  " }]) {
+    { lit_at: LIT, sent: true, out_at: out, answer: 3 }]) {
     assert.deepEqual(K.restore(JSON.stringify(bad), out), { state: "unlit" });
   }
 });
@@ -254,4 +304,32 @@ test("spring step: under-damped overshoots once, then settles on the target", ()
   x = 0; v = 0;
   for (let i = 0; i < 200; i++) [x, v] = K.springStep(x, v, 1, 70, 2 * 0.55 * Math.sqrt(70), 0.05);
   assert.ok(Math.abs(x - 1) < 0.01);
+});
+
+test("canLight false for empty and spaces, true for a word", () => {
+  assert.equal(K.canLight(""), false);
+  assert.equal(K.canLight("   \n\t "), false);
+  assert.equal(K.canLight(undefined), false);
+  assert.equal(K.canLight(null), false);
+  assert.equal(K.canLight("x"), true);
+  assert.equal(K.canLight("  the call with Riley "), true);
+});
+
+test("lit value round trip with later", () => {
+  const raw = K.litValue(LIT, "Sam's call", "Was Sam kind?");
+  assert.deepEqual(JSON.parse(raw), { lit_at: LIT, intention: "Sam's call", later: "Was Sam kind?" });
+  const s = K.restore(raw, LIT + H);
+  assert.equal(s.state, "lit");
+  assert.equal(s.later, "Was Sam kind?");
+  // shown as it came: never cut by JS length
+  const long = "🌒".repeat(60);
+  assert.equal(K.restore(K.litValue(LIT, "x", long), LIT).later, long);
+  // no later line yet, or one that isn't a line: nothing kept
+  assert.deepEqual(JSON.parse(K.litValue(LIT, "x")), { lit_at: LIT, intention: "x" });
+  assert.equal("later" in K.restore(K.litValue(LIT, "x"), LIT), false);
+  for (const bad of [7, "", "   ", null]) {
+    const r = JSON.stringify({ lit_at: LIT, intention: "x", later: bad });
+    assert.equal(K.restore(r, LIT).later, undefined);
+    assert.equal(K.restore(r, LIT).state, "lit");
+  }
 });

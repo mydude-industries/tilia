@@ -14,8 +14,8 @@ Tilia is a coach, not a licensed clinician.
 
 ## The privacy promise
 
-- Your data stays on your Mac. While it runs, your messages go only to `api.telegram.org` and your own local AI command (`claude` or `codex`). (`./setup` and `./update` download tools and new versions, and send none of your data.)
-- Worksheets, cards and blots open as a page inside Telegram. The page is served by GitHub to your phone; your Mac still talks only to Telegram and your AI. Your answers and Tilia's wording never reach GitHub ([PRIVACY.md](PRIVACY.md) says exactly what does).
+- Your data stays on your Mac. While it runs, your messages go only to `api.telegram.org` and your own local AI command (`claude` or `codex`). If you set up the optional candle relay, a lit candle's words also pass through your own relay server, sealed so it cannot read them. (`./setup` and `./update` download tools and new versions, and send none of your data.)
+- Worksheets, cards and blots open as a page inside Telegram. The page is served by GitHub to your phone; your Mac still talks only to Telegram, your AI, and (if you set one up) your own relay server that passes the candle's sealed words. Your answers and Tilia's wording never reach GitHub ([PRIVACY.md](PRIVACY.md) says exactly what does).
 - Nobody else can read it, including the author, as long as the bot is made from your own Telegram, the ChatGPT or Claude login is your own, and nobody else has an administrator account on your Mac. PRIVACY.md explains each. There is no analytics, no telemetry and no shared server.
 - Updates never happen on their own. You see which files would change, get the audit prompt, and type `yes`.
 - You can check all of this yourself, with your own AI, using the prompt in [PRIVACY.md](PRIVACY.md).
@@ -30,9 +30,15 @@ doing anything.
 
 Now and then Tilia offers a short worksheet ("check the story", "ride the wave", "plan the talk" and a few more), or you can ask for one. It comes as an "Open" button in the chat, and the page opens inside Telegram. When you send your answers, Tilia replies to them like any message.
 
-It can also draw you a tarot card or make you an ink blot. Before you look at a card, Tilia writes its own read of it and seals it; after you say what you see, it shows you that read word for word and says where you agree and where you differ. A card or a blot is a prompt for honest thinking. Tilia never predicts, scores or diagnoses. Once a week or so, when nothing heavy is going on, Tilia may send one first. Send `/cards off` to stop that, and `/worksheets off` if you don't want worksheets offered on their own (asking always works).
+It can also draw you a tarot card or make you an ink blot. Before you look at a card, Tilia writes its own read of it and seals it; after you say what you see, it shows you that read word for word and says where you agree and where you differ. A card or a blot is a prompt for honest thinking. Tilia never predicts, scores or diagnoses. Every few days, when nothing heavy is going on, Tilia may send one first. Send `/cards off` to stop that, and `/worksheets off` if you don't want worksheets offered on their own (asking always works).
 
 Everything you finish shows up on the mirror: one page on your Mac, `Tilia Mirror.html` in your home folder, with a timeline of what you wrote and what Tilia said, and the patterns it has noticed. It has no server and loads nothing from the internet. Send `/mirror` in Telegram to bring it up to date.
+
+## The candle
+
+Before a hard thing, you can light a candle: write what you're going in with, light it, and blow it out with your breath when it's done. It works on its own, silently, with nothing extra to set up.
+
+If you want Tilia to answer in the smoke, it needs a small relay server that you run yourself (`./setup relay` connects this Mac to it). The relay only passes sealed words between the candle page and your Mac, and it cannot read them. It is optional. [relay/README.md](relay/README.md) says how to run one, and [PRIVACY.md](PRIVACY.md) says what it can and can't see.
 
 ## Setup
 
@@ -51,6 +57,7 @@ To change something after setup is done, run one of these in the same folder:
 - `./setup ai`: ChatGPT or Claude, and which model
 - `./setup import`: bring what your AI already knows about you (optional; the file you give it is deleted after)
 - `./setup bot`: a new Telegram bot or phone
+- `./setup relay`: connect this Mac to your own candle relay (optional, see [The candle](#the-candle))
 - `./setup all`: the whole walk-through again
 
 ## What it costs: your own ChatGPT or Claude plan
@@ -61,6 +68,7 @@ plan is usually enough. There is no other fee.
 ## More
 
 - [PRIVACY.md](PRIVACY.md): what is stored, who can see it, how to delete it
+- [relay/README.md](relay/README.md): running your own candle relay (optional)
 - [SECURITY.md](SECURITY.md): how to report a problem privately
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to help, and what never to commit
 

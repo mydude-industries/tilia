@@ -164,8 +164,26 @@ def _item(e, user_turns, art, episode: bool = False) -> dict:
         "month": f"{when:%B %Y}" if when else "",
         "when": f"{when:%A} {when.day} {when:%B %Y}, {when:%H:%M}" if when else "",
     }
+    item["style"] = entries.STYLE_LABELS.get(e.style)
+    saved = entries.candle_saved(e)
+    if saved:
+        intention, lit, out, answer = saved
+        lit, out = lit.astimezone(), out.astimezone()  # saved as local wall-clock text
+        item["qa"] = [{"q": "Intention", "a": intention or "No words"}]
+        seen = e.voice_seen or 0  # only the lines the page says it spelled for them
+        if e.voice_now and seen & entries.SEEN_NOW:
+            item["qa"].append({"q": "Tilia, as it was lit", "a": e.voice_now})
+        if e.voice_later and seen & entries.SEEN_LATER:
+            item["qa"].append({"q": "Tilia, sealed for the blow-out", "a": e.voice_later})
+        item["qa"].append({"q": "How did it go?", "a": answer} if answer in entries.CANDLE_TAPS
+                          else {"q": "Anything to tell Tilia?", "a": answer or "Nothing said"})
+        item["lit"] = f"{lit:%A} {lit.day} {lit:%B %Y}, {lit:%H:%M}"
+        item["burned"] = entries.burned_text(*(x.replace(tzinfo=None) for x in (lit, out)))
     if e.type == "blot" and e.seed is not None:
         item["seed"] = e.seed
+    if entries.is_mode(e) and e.style == "quick":  # the one question, with what they saw
+        said = next((a for a in e.answers or [] if isinstance(a, str) and a), None)
+        item["qa"] = [{"q": entries.QUICK_PROMPT, "a": said}] if said else []
     if card:
         item["card"] = card
     if e.type in entries.SPREADS:
@@ -383,6 +401,7 @@ summary {
 }
 summary::-webkit-details-marker { display: none; }
 summary:hover { background: var(--paper-sunk); }
+.what .style { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .date { align-self: start; text-align: center; font-variant-numeric: tabular-nums; }
 .date b { display: block; font: 500 28px/1 var(--serif); }
 .date span { display: block; margin-top: var(--s1); font-size: 13px; color: var(--muted); }
@@ -576,6 +595,7 @@ _RENDER = r"""(function () {
     add(date, el('span', null, e.dow));
     var what = add(s, el('div', 'what'));
     add(what, el('h3', null, e.title));
+    if (e.style) add(what, el('p', 'style', e.style));
     var gist = e.qa.length ? e.qa[0].a : ((e.spread && e.spread.together) || e.reply || '');
     if (gist) add(what, el('p', 'gist', gist));
     var f = feel(e.mood);
@@ -643,6 +663,12 @@ _RENDER = r"""(function () {
       var facts = add(t, el('dl', 'facts'));
       add(facts, el('dt', null, 'When'));
       add(facts, el('dd', null, e.when));
+      if (e.lit) {
+        add(facts, el('dt', null, 'Lit'));
+        add(facts, el('dd', null, e.lit));
+        add(facts, el('dt', null, 'Burned'));
+        add(facts, el('dd', null, e.burned));
+      }
       if (f) {
         add(facts, el('dt', null, 'Feeling'));
         add(facts, el('dd', null, f + ' (0 to 10)'));

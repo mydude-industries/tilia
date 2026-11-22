@@ -383,3 +383,51 @@ def test_data_dir_starts_even_if_the_spotlight_marker_is_a_symlink(home, tmp_pat
     assert not (tmp_path / "elsewhere").exists()  # never followed
     paths.data_dir()
     assert capsys.readouterr().err == ""  # said once
+
+
+def test_style_column_migrates(home):
+    import sqlite3
+    db = paths.db_path()
+    old = sqlite3.connect(str(db))  # an entries table from before styles
+    old.execute("CREATE TABLE entries(id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, "
+                "type TEXT NOT NULL, source TEXT NOT NULL, created TEXT NOT NULL, status TEXT "
+                "NOT NULL DEFAULT 'open', wording TEXT, answers TEXT, answered_at TEXT, reply "
+                "TEXT, sealed_read TEXT, card TEXT, seed INTEGER, assignment_id INTEGER, turn_id "
+                "INTEGER, mood_before INTEGER, mood_after INTEGER, outcome INTEGER, themes TEXT, "
+                "followup_signal INTEGER, followup_at TEXT)")
+    old.execute("INSERT INTO entries(token,type,source,created) VALUES "
+                "('aaaaaaaaaaaa','tarot','ask','2026-11-08T12:00:00+00:00')")
+    old.commit()
+    old.close()
+    s = Store(db)
+    [e] = s.entries()
+    assert e.style is None  # old rows keep NULL
+    eid = s.add_entry("tarot", "bbbbbbbbbbbb", "checkin", card="00-the-fool", status="done",
+                      style="gift")
+    assert s.get_entry(eid).style == "gift" and s.get_entry(eid).status == "done"
+    Store(db)  # reopening doesn't add it twice
+    assert Store(db).get_entry(eid).style == "gift"
+
+
+def test_voice_columns_migrate(home):
+    import sqlite3
+    db = paths.db_path()
+    old = sqlite3.connect(str(db))  # an entries table from before the candle's voice
+    old.execute("CREATE TABLE entries(id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, "
+                "type TEXT NOT NULL, source TEXT NOT NULL, created TEXT NOT NULL, status TEXT "
+                "NOT NULL DEFAULT 'open', wording TEXT, answers TEXT, answered_at TEXT, reply "
+                "TEXT, sealed_read TEXT, card TEXT, seed INTEGER, assignment_id INTEGER, turn_id "
+                "INTEGER, mood_before INTEGER, mood_after INTEGER, outcome INTEGER, themes TEXT, "
+                "followup_signal INTEGER, followup_at TEXT, style TEXT)")
+    old.execute("INSERT INTO entries(token,type,source,created) VALUES "
+                "('aaaaaaaaaaaa','candle','ask','2026-11-08T12:00:00+00:00')")
+    old.commit()
+    old.close()
+    s = Store(db)
+    [e] = s.entries()
+    assert e.voice_now is None and e.voice_later is None  # old rows keep NULL
+    assert e.voice_seen is None
+    s.set_entry_voice(e.id, "Breathe first.", "How did it go?")
+    Store(db)  # reopening doesn't add them twice
+    e = Store(db).get_entry(e.id)
+    assert (e.voice_now, e.voice_later) == ("Breathe first.", "How did it go?")

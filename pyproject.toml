@@ -1,11 +1,12 @@
 [project]
 name = "tilia"
-version = "0.2.3"
+version = "0.2.4"
 description = "A private Telegram coach that runs on your own Mac."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=50.0.2",
     "phonenumbers",
 ]
 

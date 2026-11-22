@@ -52,6 +52,7 @@ REDO_HELP = (
     "  ./setup ai      ChatGPT or Claude, and which model",
     "  ./setup import  bring what your AI already knows about you",
     "  ./setup bot     a new Telegram bot or phone",
+    "  ./setup relay   connect this Mac to the candle relay (keys, secret, address)",
     "  ./setup all     the whole walk-through again",
 )
 AGENT_LABEL = "com.tilia.agent"
@@ -67,6 +68,9 @@ PRIVACY_URL = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.exte
 FDA_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 BOTFATHER_URL = "https://t.me/BotFather"
 MAX_WRONG_CODES = 5
+RELAY_HELP = ("The relay carries a lit candle's sealed words from the candle page to this Mac\n"
+              "and Tilia's sealed lines back. It never sees what they say. This makes this\n"
+              "Mac's key pair and secret (both stay in the Keychain) and saves the address.")
 PROBE_LABEL = "com.tilia.probe"
 PROBE_TIMEOUT_S = 20
 CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
@@ -156,8 +160,9 @@ HELP = {
 
 _AUDIT_FALLBACK = (
     "Read this entire project. Tell me plainly: does it send my data anywhere other than "
-    "api.telegram.org and the local AI command (`claude` or `codex`)? Could anyone other than "
-    "me read my "
+    "api.telegram.org, the local AI command (`claude` or `codex`), and the candle relay "
+    "address I set with `./setup relay` (if I did)? Is what goes to that relay sealed so the "
+    "relay can't read it? Could anyone other than me read my "
     "conversations, profile or texts? Point to the exact files and lines for every network "
     "call and every place data is written.")
 
@@ -1207,6 +1212,14 @@ class RealIO:
         from . import keychain
         return keychain.get_token()
 
+    def set_secret(self, service, value):
+        from . import keychain
+        keychain.set_secret(service, value)
+
+    def get_secret(self, service):
+        from . import keychain
+        return keychain.get_secret(service)
+
     def ai_check(self, cfg):
         """One tiny call through the real runner for cfg's provider (all hardening applies)."""
         from . import ai
@@ -1351,6 +1364,99 @@ def probe_texts(out: Path, name: str | None = None) -> None:
     tmp.write_text(json.dumps(res), encoding="utf-8")
     tmp.chmod(0o600)
     tmp.replace(out)
+
+
+def relay_setup(io) -> int:
+    """./setup relay: this Mac's key pair and relay secret (into the Keychain only), the
+    relay's address and this Mac's id (into the config), and the line for the server.
+    Standalone (not a STEPS member). Re-running makes new keys only after a yes."""
+    from . import relay, seal
+    w = Wizard(io, paths.setup_state_path())
+    cfg = config.load()
+    try:
+        w.ui.screen(None, None, "Candle voice relay", 2, [
+            "This lets a lit candle hear back from Tilia, through your relay server.",
+            "The private key and the secret stay in this Mac's Keychain."], help=RELAY_HELP)
+        if cfg.relay_id and _relay_keys(io, relay):
+            if _relay_key_matches(io, relay, seal, cfg.relay_public):
+                ans = w.ui.ask("This Mac already has relay keys. Make new ones? The old ones "
+                               "stop working. [y]/[N]: ").strip().lower()
+                if ans not in ("y", "yes"):
+                    w.ui.ok("Kept the keys you have.")
+                    _relay_next(w, relay.server_line(cfg.relay_id,
+                                                     io.get_secret(relay.SECRET_SERVICE)))
+                    return 0
+            else:
+                w.ui.fail("The relay key in your Keychain doesn't match the one Tilia saved, "
+                          "so candles can't be answered.")
+                ans = w.ui.ask("Make new keys now? [Y]/[n]: ").strip().lower()
+                if ans in ("n", "no"):
+                    w.ui.say("Nothing changed. Run ./setup relay when you're ready.")
+                    return 1
+        url = _ask_relay_url(w, relay, cfg.relay_url)
+    except (EOFError, KeyboardInterrupt):
+        io.print("")
+        w.ui.say("Nothing changed. Run ./setup relay when you're ready.")
+        return 1
+    private_pem, public = seal.new_keypair()
+    secret = relay.new_secret()
+    try:
+        # the secret first and the private key last: a write that stops halfway leaves
+        # the old key, which still matches the public half saved in the config
+        io.set_secret(relay.SECRET_SERVICE, secret)
+        io.set_secret(relay.KEY_SERVICE, relay.encode_pem(private_pem))
+    except (RuntimeError, ValueError) as e:
+        w.ui.fail(f"The Keychain didn't take the keys ({type(e).__name__}), so unlock it and "
+                  "run ./setup relay again.")
+        return 1
+    cfg.relay_url, cfg.relay_public = url, public
+    cfg.relay_id = cfg.relay_id if relay.MAC_ID.fullmatch(cfg.relay_id or "") else relay.new_id()
+    config.save(cfg)
+    w.ui.ok("Keys made and saved in the Keychain")
+    _relay_next(w, relay.server_line(cfg.relay_id, secret))
+    if io.agent_installed() and restart_agent(run=io.run) == 0:
+        w.ui.ok("Restarted Tilia, so it's listening for candles now")
+    return 0
+
+
+def _relay_keys(io, relay) -> bool:
+    try:
+        io.get_secret(relay.KEY_SERVICE)
+        io.get_secret(relay.SECRET_SERVICE)
+    except RuntimeError:
+        return False
+    return True
+
+
+def _relay_key_matches(io, relay, seal, public: str) -> bool:
+    """Whether the Keychain's private key is the one whose public half the config holds."""
+    try:
+        return bool(public) and seal.public_of(
+            relay.decode_pem(io.get_secret(relay.KEY_SERVICE))) == public
+    except (RuntimeError, ValueError, seal.SealError):
+        return False
+
+
+def _ask_relay_url(w, relay, current: str) -> str:
+    hint = f" (Enter keeps {current})" if current else ""
+    while True:
+        raw = w.ui.ask(f"Your relay's https address{hint}: ").strip()
+        if not raw and current:
+            raw = current
+        try:
+            return relay.check_url(raw)
+        except ValueError:
+            w.ui.fail("That isn't your relay's https address, so check it and type it again.")
+
+
+def _relay_next(w, line: str) -> None:
+    w.ui.say("")
+    w.ui.say("Add this to TILIA_RELAY_MACS on the relay server (comma separated),")
+    w.ui.say("then restart the relay:")
+    w.ui.say("")
+    w.ui.say(f"    {line}")
+    w.ui.say("")
+    w.ui.say("New candle buttons carry the relay from now on.")
 
 
 def _wrap(text: str, width: int) -> list[str]:
@@ -1509,6 +1615,8 @@ def main(argv=None) -> int:
         text = Path(src).read_text(encoding="utf-8") if src else sys.stdin.read()
         print(audit_prompt(text))
         return 0
+    if argv[:1] == ["relay"]:
+        return relay_setup(RealIO())
     redo = argv[0] if argv else None
     if redo is not None and redo not in REDO:
         print("Run ./setup to set up or resume, or one of these to change something:")

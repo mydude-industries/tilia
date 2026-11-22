@@ -29,7 +29,9 @@ def test_check_story_sheet_valid():
     assert "check_story" in entries.available_types()
 
 
-CBT_TYPES = [t for t in entries.TYPES if t not in entries.CARD_TYPES]
+CBT_TYPES = [t for t in entries.TYPES
+             if t not in entries.CARD_TYPES and t not in entries.RITUALS]
+SHEET_TYPES = [t for t in entries.TYPES if t not in entries.RITUALS]  # a page of cards
 
 
 @pytest.mark.parametrize("type_", CBT_TYPES)
@@ -154,7 +156,7 @@ def test_starter_card_accepted(tmp_path, monkeypatch):
     assert entries.load_sheet("check_story")["cards"][2]["option_mode"] == "starter"
 
 
-@pytest.mark.parametrize("type_", entries.TYPES)
+@pytest.mark.parametrize("type_", SHEET_TYPES)
 def test_every_text_card_is_tap_first(type_):
     """R24: no text card asks for typing alone; each offers 3-5 short taps."""
     sheet = entries.load_sheet(type_)
@@ -560,3 +562,28 @@ def test_clean_wording_takes_card_options_only_when_asked():
     assert entries.clean_wording(sheet, raw) is None  # personalize never tailors them
     assert entries.clean_wording(sheet, raw, card_options=True) == {
         "options": {"notice": CARD_OPTS}}
+
+
+def test_candle_sheet_names_its_saved_fields():
+    """The candle has its own page (webapp/candle.html); its sheet only names what a
+    blown-out candle keeps, so the mirror and the digest can show it."""
+    sheet = entries.load_sheet("candle")
+    assert [(c["id"], c["kind"], c["personal"]) for c in sheet["cards"]] == [
+        ("intention", "text", False), ("lit", "text", False), ("out", "text", False),
+        ("answer", "text", False)]
+    assert sheet["cards"][-1]["max_chars"] == entries.CANDLE_ANSWER_MAX
+    assert sheet["cards"][0]["max_chars"] == entries.CANDLE_INTENTION_MAX
+    assert entries.RITUAL_PAGES == {"candle": "candle.html"}
+    assert (paths.REPO_ROOT / "webapp" / "candle.html").is_file()
+
+
+def test_ritual_sheet_check(tmp_path, monkeypatch):
+    monkeypatch.setattr(entries, "SHEET_DIR", tmp_path)
+    field = {"id": "a", "kind": "text", "short": "a", "prompt": "A?", "personal": False,
+             "max_chars": 10}
+    for cards in ([], [dict(field, kind="mood")], [dict(field, personal=True)],
+                  [field, field]):
+        (tmp_path / "candle.json").write_text(json.dumps(
+            {"type": "candle", "v": 1, "title": "C", "pitch": "p", "cards": cards}))
+        with pytest.raises(ValueError):
+            entries.load_sheet("candle")

@@ -179,6 +179,8 @@ def _entry_day(e) -> str:
 
 def _entry_title(e) -> str:
     from . import entries
+    if entries.is_mode(e):
+        return entries.MODE_TITLES[e.style]
     try:
         return entries.load_sheet(e.type)["title"]
     except ValueError:
@@ -199,7 +201,14 @@ def _entry_gist(e) -> str:
     except ValueError:
         cards = None
     answers = e.answers or []
-    if cards is None or not entries.fits({"cards": cards}, answers):
+    saved = entries.candle_saved(e)
+    if saved:  # a candle: what it was for and what they said, not the clock times
+        parts += [f"for: {saved[0] or 'no words'}",
+                  f"said: {saved[3]}" if saved[3] else "said nothing"]
+    elif entries.is_mode(e) and e.style == "quick":
+        said = next((a for a in answers if isinstance(a, str) and a), None)
+        parts += [f"first thing I saw: {said}"] if said else []
+    elif cards is None or not entries.fits({"cards": cards}, answers):
         parts += [", ".join(map(str, a)) if isinstance(a, list) else str(a)
                   for a in answers if isinstance(a, (str, list)) and a]
     else:
@@ -212,12 +221,15 @@ def _entry_gist(e) -> str:
 
 def entry_line(e, when: str) -> str:
     """One finished entry: `[when] <title>: <gist ≤ 300> | feeling b→a | themes`."""
+    from . import entries
     gist = _entry_gist(e)
     if len(gist) > DIGEST_COMPACT:
         gist = gist[:DIGEST_COMPACT - 1] + "…"
     f = lambda x: "?" if x is None else x  # noqa: E731
     out = f"[{when}] {_entry_title(e)}: {gist} | feeling {f(e.mood_before)}→{f(e.mood_after)}"
-    return out + (f" | {', '.join(e.themes)}" if e.themes else "")
+    out += (f" | {', '.join(e.themes)}" if e.themes else "")
+    label = entries.STYLE_LABELS.get(e.style)
+    return out + (f" | {label}" if label else "")
 
 
 def _entries_digest(store) -> str:
@@ -295,6 +307,10 @@ def _entry(entry, store=None) -> str:
     by the read sealed before they looked. A blot is followed by their last PAST_BLOTS
     earlier blots (D15), when the store is given."""
     from . import entries
+    if entries.is_mode(entry):
+        return _mode_entry(entry, store)
+    if entry.type == "candle":
+        return _candle_entry(entry)
     sheet = entries.load_sheet(entry.type)
     mine = (entry.wording or {}).get("prompts") or {}
     rows = []
@@ -332,6 +348,87 @@ def _entry(entry, store=None) -> str:
     return out
 
 
+def _mode_entry(entry, store=None) -> str:
+    """A pick one or a quick blot: what they chose or saw, without the sheet's questions
+    (they weren't asked them, nor how they felt). Pick one has no sealed read by design:
+    the line they saw is Tilia's, fixed per card."""
+    from . import entries
+    if entry.style == "pick":
+        info = entries.card_info(entry.card or "") or {}
+        name = info.get("name") or entry.card or "(not saved)"
+        num = f" ({info['number']})" if info.get("number") else ""
+        line = entries.card_line(entry.card or "")
+        rows = ["Pick one: three cards lay face down; they chose one and turned it over.",
+                f"The card they chose: {name}{num}, upright"]
+        if line:
+            rows.append(f"Your line they saw under it: {line}")
+        return "ENTRY (what they filled out)\n" + _tag("entry", "\n\n".join(rows))
+    ink = {"green": "green and gold ink"}.get(entries.blot_palette(entry.seed), "black ink") \
+        if entry.seed is not None else "ink"
+    said = next((a for a in entry.answers or [] if isinstance(a, str) and a), "")
+    rows = [f"Quick blot (one question only). The blot they looked at: seed {entry.seed}, {ink}",
+            f"Q: {entries.QUICK_PROMPT}\nA: {said or '(nothing)'}"]
+    out = "ENTRY (what they filled out)\n" + _tag("entry", "\n\n".join(rows))
+    if store is not None:
+        past = [e for e in store.entries(types=("blot",), statuses=("done",))
+                if e.id != entry.id][-PAST_BLOTS:]
+        out += (f"\n\nPAST BLOTS (their last {PAST_BLOTS} before this one, oldest first)\n"
+                + _tag("past_blots", "\n".join(entry_line(e, _entry_day(e)) for e in past),
+                       "(none: this is their first blot)"))
+    return out
+
+
+def _candle_entry(entry) -> str:
+    """A candle: what it was for (their words, if any), how long it burned, Tilia's two lines
+    as this Mac saved them (never the page's copy), and what they told Tilia afterwards.
+    No feelings: they weren't asked."""
+    from . import entries
+    a = entry.answers if isinstance(entry.answers, list) and len(entry.answers) == 4 \
+        else ["", "", "", ""]
+    rows = ["A candle: they lit it on their phone before something hard and blew it out "
+            "after.",
+            f"What it was for (their words): {a[0]}" if a[0]
+            else "What it was for: they didn't say."]
+    try:
+        lit, out = (datetime.strptime(x, "%Y-%m-%d %H:%M") for x in (a[1], a[2]))
+        mins = int((out - lit).total_seconds() // 60)
+        span = f"{mins // 60} h {mins % 60} min" if mins >= 60 else f"{mins} min"
+        rows.append(f"Lit {a[1]}, blown out {a[2]} ({span} later)")
+    except ValueError:
+        pass
+    # the text is this Mac's own; whether they saw it is what the page said it spelled
+    seen = entry.voice_seen or 0
+    said_now = bool(entry.voice_now and seen & entries.SEEN_NOW)
+    said_later = bool(entry.voice_later and seen & entries.SEEN_LATER)
+    if said_now:
+        rows.append(f"Your line, spelled in the smoke as it was lit: {entry.voice_now}")
+    if said_later:
+        rows.append("Your sealed line, spelled in the smoke after their words at blow-out: "
+                    f"{entry.voice_later}")
+    elif said_now:
+        rows.append("No sealed line reached them at blow-out: the smoke spelled only "
+                    "their words.")
+    else:
+        rows.append("No line from you reached them: the smoke spelled only their words.")
+    if a[3] in entries.CANDLE_TAPS:  # an older page asked how it went, with four taps
+        rows.append(f"Q: How did it go?\nA: {a[3]}")
+    else:
+        rows.append(f"Then the page asked (optional): Anything to tell Tilia?\n"
+                    f"They said: {a[3] or '(nothing said)'}")
+    return "ENTRY (what they filled out)\n" + _tag("entry", "\n\n".join(rows))
+
+
+_MODE_LINES = {
+    "pick": ('MODE: entry. They just picked a card in "Pick one". Answer it the way '
+             '"Answering a worksheet" says for Pick one: one or two sentences.'),
+    "quick": ('MODE: entry. They just answered a "Quick blot". Answer it the way '
+              '"Answering a worksheet" says for a quick blot: one sentence.'),
+    "candle": ("MODE: entry. They just blew out a candle they lit for something hard. Pick up "
+               "from your sealed line the way \"Answering a worksheet\" says for a candle: "
+               "one or two sentences."),
+}
+
+
 def build_prompt(store, cfg, now, incoming: list[str], mode: str = "chat", entry=None) -> str:
     active, mentioned = _episode(store, now)
     crisis = (f"CRISIS EPISODE: active, 988 already mentioned: {'yes' if mentioned else 'no'}"
@@ -344,6 +441,10 @@ def build_prompt(store, cfg, now, incoming: list[str], mode: str = "chat", entry
         title = entries.load_sheet(entry.type)["title"]
         mode_line = (f'MODE: entry. They just finished "{title}". Answer it the way '
                      '"Answering a worksheet" says.')
+        if entries.is_mode(entry):
+            mode_line = _MODE_LINES[entry.style]
+        elif entry.type == "candle":
+            mode_line = _MODE_LINES["candle"]
     parts = [
         f"Current local time: {now.astimezone().strftime('%Y-%m-%d %H:%M (%A)')}\n{mode_line}\n"
         f"{DATA_NOTE}",
@@ -388,7 +489,8 @@ def _offer(store, cfg, now, r: CoachReply, run) -> None:
     asked = bool(na or ws)
     available = entries.available_types()
     if na and (cfg.worksheets is False or na["type"] not in available
-               or na["type"] in entries.CARD_TYPES):  # D11: cards are never assignments
+               or na["type"] in entries.CARD_TYPES  # D11: cards are never assignments
+               or na["type"] in entries.RITUALS):  # nor is a candle: it's for a moment
         na = None
     try:
         title = entries.load_sheet(na["type"])["title"] if na else None
@@ -399,7 +501,7 @@ def _offer(store, cfg, now, r: CoachReply, run) -> None:
         r.offer = worksheets.prepare(store, cfg, now, na["type"], focus=na["focus"],
                                      source="assignment", assignment_id=aid, run=run)
     elif ws and ws["type"] == "again":
-        r.offer = worksheets.again(store)
+        r.offer = worksheets.again(store, now, cfg)
     elif ws and ws["type"] in available:
         r.offer = worksheets.prepare(store, cfg, now, ws["type"], focus=ws["focus"],
                                      source="ask", run=run)

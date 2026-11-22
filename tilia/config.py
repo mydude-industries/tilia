@@ -25,6 +25,10 @@ class Config:
     goal: str = ""
     worksheets: bool = True          # offer worksheets on my own (asking always works)
     cards: bool = True               # surprise tarot / blot check-ins
+    relay_url: str = ""              # the candle relay (./setup relay); "" = no voice
+    relay_id: str = ""               # this Mac's id on the relay
+    relay_public: str = ""           # the public half (SPKI, base64url); the private half
+                                     # and the relay secret live only in the Keychain
 
 
 def active_model(cfg: Config) -> str:

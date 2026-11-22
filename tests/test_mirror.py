@@ -458,3 +458,81 @@ def test_mirror_follows_the_dark_setting_and_keeps_card_paper(store):
         assert token in block
     assert "--blot-paper" not in block
     assert re.search(r"\.paper-face \{[^}]*color: var\(--card-ink\)", html)
+
+
+def _styled(store, type_, answers, style, **kw):
+    eid = done(store, type_, answers, **kw)
+    store.set_entry_style(eid, style)
+    return eid
+
+
+def test_mirror_labels_each_style_quietly(store):
+    ids = {s: _styled(store, "blot", BLOT, s, seed=7) for s in ("gift", "pick", "draw", "quick")}
+    plain = _styled(store, "blot", BLOT, "ritual", seed=8)
+    old = done(store, "blot", BLOT, seed=9)
+    by_id = {i["id"]: i for i in mirror.data(store, NOW)["entries"]}
+    assert {s: by_id[i]["style"] for s, i in ids.items()} == {
+        "gift": "a gift", "pick": "you picked", "draw": "Tilia's draw", "quick": "quick look"}
+    assert by_id[plain]["style"] is None and by_id[old]["style"] is None
+
+
+def _candle(store, intention="the call with Riley", out_min=125, answer="Harder than I hoped."):
+    lit = NOW - timedelta(minutes=out_min)
+    eid = store.add_entry("candle", entries.new_token(), "ask")
+    store.answer_entry(eid, [intention, f"{lit:%Y-%m-%d %H:%M}", f"{NOW:%Y-%m-%d %H:%M}",
+                             answer], None, None)
+    store.finish_entry(eid, "That took something.", [], None)
+    store.set_entry_style(eid, "ritual")
+    return eid
+
+
+def test_mirror_shows_a_candle(store):
+    eid = _candle(store)
+    [item] = [i for i in mirror.data(store, NOW)["entries"] if i["id"] == eid]
+    assert item["title"] == "Candle"
+    assert {"q": "Intention", "a": "the call with Riley"} in item["qa"]
+    assert {"q": "How did it go?", "a": "Harder than I hoped."} in item["qa"]
+    assert item["lit"] == "Saturday 7 November 2026, 09:55"
+    assert item["burned"] == "2 h 5 min"
+    assert not any("2026-11" in str(v) for v in item["qa"])  # no ISO stamps
+
+
+def test_mirror_shows_candle_words(store):
+    # what they told Tilia shows as their words, with Tilia's two lines; nothing said reads so
+    eid = _candle(store, answer="I said the hard part")
+    store.set_entry_voice(eid, "Go gently.", "You went in anyway.")
+    store.set_entry_voice_seen(eid, entries.SEEN_NOW | entries.SEEN_LATER)
+    [item] = [i for i in mirror.data(store, NOW)["entries"] if i["id"] == eid]
+    assert {"q": "Tilia, as it was lit", "a": "Go gently."} in item["qa"]
+    assert {"q": "Tilia, sealed for the blow-out", "a": "You went in anyway."} in item["qa"]
+    assert {"q": "Anything to tell Tilia?", "a": "I said the hard part"} in item["qa"]
+    quiet = _candle(store, answer="")
+    [item] = [i for i in mirror.data(store, NOW)["entries"] if i["id"] == quiet]
+    assert {"q": "Anything to tell Tilia?", "a": "Nothing said"} in item["qa"]
+    assert not any(q["q"].startswith("Tilia") for q in item["qa"])  # no lines reached them
+
+
+def test_mirror_candle_without_words(store):
+    eid = _candle(store, intention="", out_min=30)
+    [item] = [i for i in mirror.data(store, NOW)["entries"] if i["id"] == eid]
+    assert {"q": "Intention", "a": "No words"} in item["qa"]
+    assert item["burned"] == "30 min"
+    html = mirror.render(store, NOW)
+    assert "e.lit" in html and "e.burned" in html and "e.style" in html
+
+
+def test_mirror_shows_only_the_candle_lines_they_saw(store):
+    # a line the smoke never spelled for them never shows in the mirror either
+    def lines(seen):
+        eid = _candle(store, answer="fine")
+        store.set_entry_voice(eid, "Go gently.", "You went in anyway.")
+        if seen is not None:
+            store.set_entry_voice_seen(eid, seen)
+        [item] = [i for i in mirror.data(store, NOW)["entries"] if i["id"] == eid]
+        return [q["q"] for q in item["qa"] if q["q"].startswith("Tilia")]
+    assert lines(None) == []
+    assert lines(0) == []
+    assert lines(entries.SEEN_NOW) == ["Tilia, as it was lit"]
+    assert lines(entries.SEEN_LATER) == ["Tilia, sealed for the blow-out"]
+    assert lines(entries.SEEN_NOW | entries.SEEN_LATER) == [
+        "Tilia, as it was lit", "Tilia, sealed for the blow-out"]

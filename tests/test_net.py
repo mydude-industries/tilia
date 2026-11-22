@@ -75,6 +75,32 @@ def test_post_error_redacts_token():
     assert ei.value.__cause__ is None
 
 
+def _http_error(code, body):
+    import urllib.error
+    return urllib.error.HTTPError("https://api.telegram.org/botSECRET/x", code, "err", {},
+                                  io.BytesIO(body))
+
+
+def test_http_error_with_a_json_body_is_an_answer():
+    """Telegram refuses with 4xx and {"ok": false}: that is an answer (it was not sent),
+    which the caller must tell apart from no answer at all (it may have been sent)."""
+    def opener(req, timeout=None):
+        raise _http_error(400, b'{"ok": false, "description": "Bad Request"}')
+    assert net.post("https://api.telegram.org/botX/sendPhoto", {}, opener=opener) == \
+        {"ok": False, "description": "Bad Request"}
+
+    def gateway(req, timeout=None):
+        raise _http_error(502, b"<html>Bad Gateway</html>")
+    with pytest.raises(net.NetError) as ei:
+        net.post("https://api.telegram.org/botSECRET/sendPhoto", {}, opener=gateway)
+    assert "SECRET" not in str(ei.value) and ei.value.__cause__ is None
+
+    def timeout(req, timeout=None):
+        raise TimeoutError("timed out")
+    with pytest.raises(net.NetError):
+        net.post("https://api.telegram.org/botX/sendPhoto", {}, opener=timeout)
+
+
 def test_multipart_body():
     seen = {}
 

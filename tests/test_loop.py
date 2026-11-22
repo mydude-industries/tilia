@@ -665,7 +665,7 @@ def test_command_reply_sent_in_the_same_tick(store, tg, clock, claude):
 def test_checkin_delivered_through_the_outbox(store, clock, monkeypatch):
     from tilia import checkins, signals
 
-    def fake_send(store_, cfg, now, run=None):
+    def fake_send(store_, cfg, now, run=None, tg=None):
         from tilia import outbox
         outbox.enqueue(store_, "How did the talk with Riley go?", now)
         return True
@@ -930,7 +930,7 @@ def test_typing_failure_never_breaks_replying(store, clock, claude):
 def test_no_typing_for_checkins(store, clock, monkeypatch):
     from tilia import checkins, signals
 
-    def fake_send(store_, cfg, now, run=None):
+    def fake_send(store_, cfg, now, run=None, tg=None):
         from tilia import outbox
         outbox.enqueue(store_, "How did the talk with Riley go?", now)
         return True

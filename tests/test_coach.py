@@ -547,3 +547,32 @@ def test_coach_prompt_lists_sections():
     assert "tarot deck: 0 cards available" in flat
     assert text.index("SIGNALS (7 days)") < text.index("ENTRIES") < text.index("PATTERNS") \
         < text.index("RECENT TEXTS (48h)")
+
+
+def test_coach_can_offer_a_candle_through_worksheet(store):
+    from tilia.claude import parse_coach
+    r = parse_coach(json.dumps(reply("Want to light one before the call?",
+                                     worksheet={"type": "candle", "focus": "the call"})))
+    assert r.worksheet == {"type": "candle", "focus": "the call"}
+    assert "candle" in coach._settings(cfg()).split("worksheet types available: ", 1)[1]
+    r = coach.respond(store, cfg(), NOW, ["light a candle"], run=fake(reply(
+        "Here it is. Tap Open below.", worksheet={"type": "candle", "focus": None})))
+    assert r.offer is not None and "/candle.html?" in r.offer.url
+    [e] = store.entries()
+    assert (e.type, e.status) == ("candle", "open")
+
+
+def test_candle_never_offered_in_a_crisis(store):
+    r = coach.respond(store, cfg(), NOW, ["x"], run=fake(reply(
+        "I'm here. Are you safe right now?", "crisis",
+        worksheet={"type": "candle", "focus": None})))
+    assert r.offer is None and store.entries() == []
+
+
+def test_coach_md_candle_focus_and_again():
+    """A candle's focus goes nowhere (they write their own words on the page), and "again"
+    re-sends a candle that may still be burning (R6)."""
+    flat = " ".join((paths.REPO_ROOT / "prompts" / "coach.md").read_text(encoding="utf-8").split())
+    candle = flat.split("- `candle`:", 1)[1].split("- `", 1)[0]
+    assert "Leave `focus` null" in candle and "Put the hard thing" not in candle
+    assert "a candle they lit in the last few hours" in flat

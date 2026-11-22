@@ -234,3 +234,13 @@ def test_mirror_command_failure_is_logged_without_content(store, monkeypatch, ca
     err = capsys.readouterr().err
     assert "mirror failed: OSError" in err and len(err.strip().splitlines()) == 1
     assert "Riley" not in err
+
+
+def test_patterns_prompt_covers_styles_and_candles():
+    assert "candle" in SYS and "style" in SYS
+
+
+def test_patterns_md_entry_line_reads_cleanly():
+    flat = " ".join(SYS.split())
+    assert "(0 to 10), its themes, and how it came to them" in flat
+    assert "and its themes, and how" not in flat

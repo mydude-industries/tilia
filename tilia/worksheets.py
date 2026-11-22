@@ -4,14 +4,20 @@ coach.py imports this module inside a function; this module imports coach as a m
 
 import secrets
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import ai, coach, entries, paths, profile
 from .claude import CoachReply, LimitError, MissingCLI, NotLoggedIn, UnsupportedCLI
-from .webapp import Offer, make_offer
+from .webapp import Offer, make_offer, relay_params
 
 READ_MAX = 1200
 SPREAD_READ_MAX = 2000
+SHARED_READ_MAX = 600  # Tilia's own draw: the read is the message, two sentences
+SHARED = ("SHARED (this time there is no seal: Tilia pulled this thinking about their week and "
+          "sends your read straight to them as a message, right after one light line; they "
+          "won't write a read of their own first. Name the card, or for a spread each card, "
+          "and keep the whole read to two sentences, at most 600 characters. Same rules: no "
+          "prediction, no question.)")
 _RNG = secrets.SystemRandom()
 EXPIRED = "That one had expired, so I didn't keep your answers. Ask me for a fresh one any time."
 INVALID = ("That one didn't come through right, so I couldn't read your answers. "
@@ -134,19 +140,23 @@ def _answer_cards(entry, sheet) -> str:
             "taps)\n" + coach._tag("answer_cards", "\n".join(rows)))
 
 
-def seal(store, cfg, now, entry, run=subprocess.run) -> None:
+def seal(store, cfg, now, entry, run=subprocess.run, share=False) -> None:
     """Write Tilia's own read of the entry's card or spread before they look, and store it
     once (D5, D13). An entry that already has a read keeps it: no call is made. A failed
     call, the AI being down (limit, login, missing CLI) or unreadable output leaves it NULL,
     and the cards still go out: the coach says so plainly when it answers. As with
     personalize, the coach's reply has already succeeded, so nothing here may undo it.
     The same call writes each card's own answer taps (D15), kept in the entry's wording
-    under the same rules and cap; without them the sheet's generic taps show."""
+    under the same rules and cap; without them the sheet's generic taps show.
+    `share`: Tilia's own draw, where the read is sent as the message at once: two
+    sentences, and one that runs long is not kept."""
     entry = store.get_entry(entry.id)
     section = _cards_section(entry)
     if entry.sealed_read is not None or section is None:
         return
     cards, system, limit = section
+    if share:
+        limit = SHARED_READ_MAX
     sheet = entries.load_sheet(entry.type)
     prompt = "\n\n".join([
         coach.DATA_NOTE,
@@ -155,6 +165,7 @@ def seal(store, cfg, now, entry, run=subprocess.run) -> None:
         "PROFILE (your working notes on this person)\n"
         + coach._tag("profile", profile.read(), "(empty)"),
         coach._conversation(store),
+        *([SHARED] if share else []),
         "Reply with the JSON object only.",
     ])
     try:
@@ -172,9 +183,15 @@ def seal(store, cfg, now, entry, run=subprocess.run) -> None:
         store.set_wording(entry.id, entries.clean_wording(sheet, wording, card_options=True))
 
 
-def _draw_for(type: str) -> tuple[str, list[dict] | None]:
+def _draw_for(type: str, card: str | None = None) -> tuple[str, list[dict] | None]:
     """The type that can really be dealt, and its cards: a spread the deck can't fill
-    becomes a single card, and a single card with no deck becomes a blot."""
+    becomes a single card, and a single card with no deck becomes a blot. `card` (ids
+    joined with `.`) deals those exact cards instead, when the deck still has them all and
+    they fill this type: a gift that falls back to a button keeps the card its line named."""
+    if card and type in entries.TAROT_TYPES:
+        infos = [entries.card_info(i) for i in entries.card_ids(card)]
+        if all(infos) and len(infos) == len(entries.SPREADS.get(type, [None])):
+            return type, infos
     if type in entries.SPREADS:
         cards = draw_many(len(entries.SPREADS[type]))
         if cards is not None:
@@ -187,40 +204,74 @@ def _draw_for(type: str) -> tuple[str, list[dict] | None]:
 
 
 def prepare(store, cfg, now, type: str, *, focus=None, source="ask", assignment_id=None,
-            run=subprocess.run) -> Offer | None:
+            style=None, card=None, run=subprocess.run) -> Offer | None:
     """Create an open entry for this worksheet and return its button. None if the sheet
     can't be read. A blot gets a fresh seed and no wording. A tarot entry or a spread gets
     its drawn cards (ids joined with `.`) and its sealed read before the button exists; a
-    spread the deck can't fill becomes one card, and with no deck at all a blot."""
-    type, cards = _draw_for(type)
+    spread the deck can't fill becomes one card, and with no deck at all a blot.
+    `style` (a proactive offer's, entries.STYLES) is saved on the entry; `pick` and `quick`
+    ride as `mode=` on the URL. A `pick` tarot entry gets a seed instead of a card: the page
+    deals three face down from it and they choose, so there is no read to seal. `card` deals
+    those cards instead of fresh ones (see _draw_for)."""
+    pick = style == "pick" and type == "tarot"
+    type, cards = (type, None) if pick else _draw_for(type, card)
     try:
         sheet = entries.load_sheet(type)
     except ValueError:
         return None
     blot = type == "blot"
-    seed = entries.new_seed() if blot else None
+    seed = entries.new_seed() if blot or pick else None
     cid = ".".join(c["id"] for c in cards) if cards else None
-    wording = personalize(cfg, sheet, focus, run) if focus and not blot else None
+    # a blot has no wording; a candle asks them itself, on the page, what it's for
+    wording = personalize(cfg, sheet, focus, run) \
+        if focus and not blot and type not in entries.RITUALS else None
     token = entries.new_token()
     eid = store.add_entry(type, token, source, wording=wording, card=cid, seed=seed,
-                          assignment_id=assignment_id, turn_id=store.last_turn_id())
+                          assignment_id=assignment_id, turn_id=store.last_turn_id(),
+                          style=style)
     if cid:
         seal(store, cfg, now, store.get_entry(eid), run)
         wording = store.get_entry(eid).wording  # with the cards' own taps, if written
-    return make_offer(sheet, token, card=cid, seed=seed, wording=wording)
+    return make_offer(sheet, token, card=cid, seed=seed, wording=wording, mode=_mode(style),
+                      relay=relay_params(cfg))
 
 
-def offer_for(store, entry) -> Offer:
-    """The button for an entry that already exists, from its stored wording, card and seed."""
+def _mode(style) -> str | None:
+    return style if style in entries.PAGE_MODES else None
+
+
+def offer_for(store, entry, cfg=None) -> Offer:
+    """The button for an entry that already exists, from its stored wording, card, seed
+    and style. With `cfg`, a candle's button carries the relay (if one is set up)."""
     return make_offer(entries.load_sheet(entry.type), entry.token, card=entry.card,
-                      seed=entry.seed, wording=entry.wording)
+                      seed=entry.seed, wording=entry.wording, mode=_mode(entry.style),
+                      relay=relay_params(cfg) if cfg is not None else None)
 
 
-def again(store) -> Offer | None:
-    """The newest open entry's button, or None if nothing is open."""
-    for e in reversed(store.entries(statuses=("open",))):
+CANDLE_REOPEN = timedelta(hours=8)
+
+
+def lit_candle(store, now):
+    """The newest open candle lit (its entry made) less than CANDLE_REOPEN ago, or None.
+    Lighting sends nothing back, so an open candle may be burning: the page lives only
+    behind the single persistent Open button, and any new button would replace it."""
+    for e in reversed(store.entries(types=entries.RITUALS, statuses=("open",))):
+        if now - datetime.fromisoformat(e.created) < CANDLE_REOPEN:
+            return e
+    return None
+
+
+def again(store, now=None, cfg=None) -> Offer | None:
+    """The newest open entry's button, or None if nothing is open. An open candle younger
+    than CANDLE_REOPEN comes first: it may still be burning (rituals phase 1, R6)."""
+    now = now or datetime.now().astimezone()
+    candle = lit_candle(store, now)
+    opened = store.entries(statuses=("open",))
+    if candle is not None:
+        opened = [e for e in opened if e.id != candle.id] + [candle]
+    for e in reversed(opened):
         try:
-            return offer_for(store, e)
+            return offer_for(store, e, cfg)
         except ValueError:  # its sheet is gone; try the next one
             continue
     return None
@@ -252,11 +303,25 @@ def accept(store, now, data: str) -> str:
         return "invalid"
     if e.type != obj["type"]:
         return "invalid"
-    # R26: answers that don't pair with this sheet came from a page opened before it
-    # changed. Keep their words, bounded and unpaired, rather than lose them.
-    paired = entries.fits(sheet, obj["answers"])
-    answers = (entries.validate_answers(sheet, obj["answers"]) if paired
-               else entries.unpaired(obj["answers"]))
+    mode, card = obj.get("mode"), None
+    if e.type in entries.RITUALS:  # the candle, at blow-out: intention, times, answer
+        answers = entries.candle_answers(obj)
+        if answers is None:
+            return "invalid"
+        paired = True
+    elif mode is not None:  # pick one / quick blot: only for an entry offered that way
+        kept = entries.mode_answers(mode, obj) if e.style == mode and entries.is_mode(e) \
+            else None
+        if kept is None:
+            return "invalid"
+        card, answers = kept
+        paired = True
+    else:
+        # R26: answers that don't pair with this sheet came from a page opened before it
+        # changed. Keep their words, bounded and unpaired, rather than lose them.
+        paired = entries.fits(sheet, obj["answers"])
+        answers = (entries.validate_answers(sheet, obj["answers"]) if paired
+                   else entries.unpaired(obj["answers"]))
     if e.status == "open" and datetime.fromisoformat(e.created) < now.astimezone() - entries.TTL:
         expire(store, now)  # after a long sleep the payload can beat the slow pass
         e = store.get_entry(e.id)
@@ -264,7 +329,13 @@ def accept(store, now, data: str) -> str:
         return "expired"
     if e.status in ("answered", "done"):
         return "answered"
-    store.answer_entry(e.id, answers, *(entries.moods(sheet, answers) if paired
+    if card is not None:  # the card they chose from the three
+        store.set_entry_card(e.id, card)
+    if e.type in entries.RITUALS:  # which of Tilia's saved lines the smoke really spelled
+        store.set_entry_voice_seen(e.id, entries.candle_seen(obj, e))
+    store.answer_entry(e.id, answers, *((None, None) if mode is not None
+                                        or e.type in entries.RITUALS
+                                        else entries.moods(sheet, answers) if paired
                                         else entries.unpaired_moods(answers)))
     return "ok"
 
@@ -278,7 +349,7 @@ def answer(store, cfg, now, entry, run=subprocess.run) -> CoachReply:
     """The coach's reply to a filled-in worksheet: its answers go in as one user turn.
     The caller wraps this (and queueing the reply) in store.atomic()."""
     sheet = entries.load_sheet(entry.type)
-    r = coach.respond(store, cfg, now, [entries.compact(sheet, entry.answers)], run=run,
+    r = coach.respond(store, cfg, now, [entries.compact_entry(sheet, entry)], run=run,
                       mode="entry", entry=entry)
     store.finish_entry(entry.id, r.reply, r.themes, store.last_turn_id("user"), r.intent_signal)
     if entry.assignment_id is not None and entry.assignment_id in {
@@ -297,7 +368,7 @@ def give_up(store, now, entry) -> CoachReply:
     reply, so it stops waiting. Its answers stay (the mirror shows them); a sealed read
     stays stored and unshown. The caller wraps this in store.atomic()."""
     try:
-        said = entries.compact(entries.load_sheet(entry.type), entry.answers)
+        said = entries.compact_entry(entries.load_sheet(entry.type), entry)
     except ValueError:  # its sheet is gone; the answers are still in the entry
         said = f"[{entry.type.replace('_', ' ')}]"
     store.add_turn("user", said)

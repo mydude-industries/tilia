@@ -259,28 +259,30 @@ def _attempt(prompt: str, model: str, system: str, run, timeout: int, cwd: str, 
     return text
 
 
-def _call_with_retry(prompt, model, system, run, timeout, cwd, home) -> str:
-    """Retry once on timeout/failure; limit, auth and missing-CLI errors propagate at once."""
-    for attempt in range(2):
+def _call_with_retry(prompt, model, system, run, timeout, cwd, home, retry=True) -> str:
+    """Retry once on timeout/failure (unless retry is False); limit, auth and missing-CLI
+    errors propagate at once."""
+    tries = 2 if retry else 1
+    for attempt in range(tries):
         try:
             return _attempt(prompt, model, system, run, timeout, cwd, home)
         except (LimitError, NotLoggedIn, MissingCLI):
             raise
         except (subprocess.TimeoutExpired, RuntimeError, OSError):
-            if attempt == 1:
+            if attempt == tries - 1:
                 raise
     raise RuntimeError("unreachable")
 
 
 def run(prompt: str, model: str, system: str, run=subprocess.run,
-        timeout: int = TIMEOUT_S) -> str:
+        timeout: int = TIMEOUT_S, retry: bool = True) -> str:
     """The final answer's text. Raises LimitError, NotLoggedIn, MissingCLI, UnsupportedCLI,
-    or RuntimeError."""
+    or RuntimeError. retry=False makes one attempt only (a caller with its own deadline)."""
     cwd = str(paths.codex_cwd())    # raise before any call if a folder isn't private/empty
     home = str(paths.codex_home())
     _sweep_instructions()
     check_version(run)
     try:
-        return _call_with_retry(prompt, model, system, run, timeout, cwd, home)
+        return _call_with_retry(prompt, model, system, run, timeout, cwd, home, retry)
     except (subprocess.TimeoutExpired, OSError) as e:
         raise RuntimeError(f"codex failed: {type(e).__name__}") from e

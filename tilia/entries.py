@@ -4,7 +4,7 @@ and the compact one-line form of an entry. Pure functions; no I/O except reading
 import json
 import re
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from . import paths
 
@@ -15,9 +15,26 @@ SPREADS = {
     "spread_relationship": ["You", "Them", "The space between"],
 }
 TYPES = ("check_story", "ride_wave", "plan_talk", "urge_log", "week_back", "tarot", "blot",
-         *SPREADS)
+         *SPREADS, "candle")
+# Rituals have a page of their own (webapp/candle.html), not a sheet of cards. Their sheet
+# names the saved fields, as text cards, so the mirror and the digest show them like any
+# entry's answers. Never cards, never assignments, never in the offer rotation.
+RITUALS = ("candle",)
+RITUAL_PAGES = {"candle": "candle.html"}
+CANDLE_INTENTION_MAX = 120  # the page keeps it to 60; a longer one is cut, not refused
+CANDLE_ANSWER_MAX = 200     # the page's own-words field (webapp/candle-follow.js)
+CANDLE_SPAN = timedelta(days=8)  # lit to blown out: an entry lives 7 days
 CARD_TYPES = ("tarot", "blot", *SPREADS)
 TAROT_TYPES = ("tarot", *SPREADS)  # entries with drawn cards and a sealed read
+# How a proactive offer is delivered (rituals phase 1, D2): `gift` the card's picture in the
+# chat, `pick` one of three face-down cards, `draw` Tilia's own card and short read, `quick`
+# a one-question blot, `ritual` the full sheet. Gift and draw entries are complete when sent.
+STYLES = ("gift", "pick", "draw", "quick", "ritual")
+PAGE_MODES = ("pick", "quick")  # styles the page itself shows differently (`mode=` on the URL)
+PAGE_MODE_TYPES = {"pick": "tarot", "quick": "blot"}  # the one sheet type each mode is for
+MODE_TITLES = {"pick": "Pick one", "quick": "Quick blot"}
+QUICK_PROMPT = "What's the first thing you see?"  # webapp/core.js QUICK_PROMPT
+QUICK_MAX = 300  # the blot sheet's "what do you see first" card
 THEMES = ("conflict", "closeness", "loss", "growth", "fear", "hope", "shame", "anger", "rest",
           "self-worth")
 PAYLOAD_MAX = 4096
@@ -124,6 +141,32 @@ def _check_sheet(type_: str, sheet) -> None:
         bad(f"max_chars add up to more than {TOTAL_TEXT_MAX}")
 
 
+def _check_ritual(type_: str, sheet) -> None:
+    """A ritual's sheet: type, version, title and pitch, and its saved fields as text cards
+    (id, short, prompt, max_chars), never personal."""
+    def bad(msg):
+        raise ValueError(f"sheet {type_}: {msg}")
+
+    if (not isinstance(sheet, dict) or sheet.get("type") != type_ or not _int(sheet.get("v"))
+            or sheet["v"] < 1):
+        bad("needs type matching its file name and a version v of 1 or more")
+    for k in ("title", "pitch"):
+        if not isinstance(sheet.get(k), str) or not sheet[k].strip():
+            bad(f"needs a {k}")
+    cards = sheet.get("cards")
+    if not isinstance(cards, list) or not cards:
+        bad("needs its fields as cards")
+    seen = set()
+    for c in cards:
+        if (not isinstance(c, dict) or c.get("kind") != "text" or c.get("personal") is not False
+                or not isinstance(c.get("id"), str) or not _CARD_ID.fullmatch(c["id"])
+                or c["id"] in seen or not _int(c.get("max_chars"))
+                or not all(isinstance(c.get(k), str) and c[k].strip()
+                           for k in ("short", "prompt"))):
+            bad("each field is a text card with a unique id, short, prompt and max_chars")
+        seen.add(c["id"])
+
+
 def load_sheet(type_: str) -> dict:
     if type_ not in TYPES:
         raise ValueError(f"unknown sheet type {type_!r}")
@@ -131,7 +174,7 @@ def load_sheet(type_: str) -> dict:
         sheet = json.loads((SHEET_DIR / f"{type_}.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         raise ValueError(f"sheet {type_} cannot be read: {e}") from e
-    _check_sheet(type_, sheet)
+    (_check_ritual if type_ in RITUALS else _check_sheet)(type_, sheet)
     return sheet
 
 
@@ -154,9 +197,126 @@ def parse_payload(data: str) -> dict | None:
             or obj.get("type") not in TYPES):
         return None
     tid = obj.get("id")
-    if not isinstance(tid, str) or not _ID.fullmatch(tid) or not isinstance(obj.get("answers"), list):
+    if not isinstance(tid, str) or not _ID.fullmatch(tid):
         return None
-    return obj
+    if obj["type"] in RITUALS:  # the candle: its own fields, never a mode or answers
+        return obj if candle_answers(obj) is not None else None
+    if "mode" in obj:  # pick one / quick blot: its own fields, checked by mode_answers
+        return obj if obj["mode"] in PAGE_MODES else None
+    return obj if isinstance(obj.get("answers"), list) else None
+
+
+def is_mode(entry) -> bool:
+    """A pick-one or quick-blot entry: answered by one choice or one line, not the sheet."""
+    return PAGE_MODE_TYPES.get(entry.style) == entry.type
+
+
+def mode_answers(mode: str, obj: dict) -> tuple[str | None, list] | None:
+    """What a pick-one or quick-blot payload keeps: (the chosen card, answers). Pick one
+    sends a card the deck has; quick blot one line of words, trimmed and cut to QUICK_MAX.
+    None when it doesn't hold that."""
+    if mode == "pick":
+        cid = obj.get("card")
+        if not isinstance(cid, str) or card_info(cid) is None:
+            return None
+        return cid, []
+    answer = obj.get("answer")
+    if mode != "quick" or not isinstance(answer, str):
+        return None
+    return None, [answer.strip()[:QUICK_MAX]]
+
+
+def _ms_local(ms) -> datetime | None:
+    if not _int(ms) or ms <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(ms / 1000).astimezone()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def candle_answers(obj: dict) -> list[str] | None:
+    """What a blown-out candle keeps, in the candle sheet's field order: [intention (may be
+    empty), lit at, out at (local "YYYY-MM-DD HH:MM"), what they told Tilia (may be empty:
+    the field is optional; an old page sent one of its taps)]. The page sends the times as
+    epoch milliseconds. Its `now` and `later` are never read: Tilia's lines are the ones
+    this Mac saved on the entry. None when it doesn't hold that: no answer string, a time
+    that isn't one, blown out before it was lit, a mode, or a worksheet's answers."""
+    if "mode" in obj or "answers" in obj:
+        return None
+    intention, answer = obj.get("intention", ""), obj.get("answer")
+    if intention is None:
+        intention = ""
+    if not isinstance(intention, str) or not isinstance(answer, str):
+        return None
+    lit, out = _ms_local(obj.get("lit_at")), _ms_local(obj.get("out_at"))
+    if lit is None or out is None or out < lit or out - lit > CANDLE_SPAN:
+        return None
+    one = lambda s, n: " ".join(s.split())[:n]  # noqa: E731
+    return [one(intention, CANDLE_INTENTION_MAX), f"{lit:%Y-%m-%d %H:%M}",
+            f"{out:%Y-%m-%d %H:%M}", one(answer, CANDLE_ANSWER_MAX)]
+
+
+STYLE_LABELS = {"gift": "a gift", "pick": "you picked", "draw": "Tilia's draw",
+                "quick": "quick look"}  # ritual and old (NULL) entries say nothing
+
+
+SEEN_NOW, SEEN_LATER = 1, 2  # entries.voice_seen bits: the lines the page says it spelled
+
+
+def candle_seen(obj: dict, entry) -> int:
+    """Which of Tilia's saved lines the page spelled: a bit for each line whose text the
+    payload echoes exactly. The text itself always comes from the entry; the page only
+    tells us whether the smoke showed it (a late answer, after the page gave up, never was)."""
+    seen = 0
+    if entry.voice_now and obj.get("now") == entry.voice_now:
+        seen |= SEEN_NOW
+    if entry.voice_later and obj.get("later") == entry.voice_later:
+        seen |= SEEN_LATER
+    return seen
+
+
+CANDLE_TAPS = ("Better than I feared.", "About what I expected.", "Harder than I hoped.",
+               "It didn't happen.")  # an older page's answers to "How did it go?"
+
+
+def candle_saved(entry) -> tuple[str, datetime, datetime, str] | None:
+    """A candle entry's (intention, lit, out, answer) as saved by candle_answers, or None."""
+    a = entry.answers
+    if entry.type != "candle" or not isinstance(a, list) or len(a) != 4 \
+            or not all(isinstance(x, str) for x in a):
+        return None
+    try:
+        lit = datetime.strptime(a[1], "%Y-%m-%d %H:%M")
+        out = datetime.strptime(a[2], "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+    return a[0], lit, out, a[3]
+
+
+def burned_text(lit: datetime, out: datetime) -> str:
+    """How long it burned, as "2 h 5 min" / "30 min" / "2 h"."""
+    mins = max(0, int((out - lit).total_seconds() // 60))
+    h, m = divmod(mins, 60)
+    return " ".join(([f"{h} h"] if h else []) + ([f"{m} min"] if m or not h else []))
+
+
+def compact_entry(sheet: dict, entry) -> str:
+    """An entry's answers in short form, as a user turn: a pick-one names the card they
+    chose, a quick blot what they saw first, a candle what it was for and what they said;
+    anything else is compact()."""
+    if entry.type == "candle":
+        a = entry.answers if isinstance(entry.answers, list) and len(entry.answers) == 4 \
+            else ["", "", "", ""]
+        parts = ([f"for: {a[0]}"] if a[0] else []) + [f"said: {a[3]}" if a[3] else "said nothing"]
+        return "[candle] " + "; ".join(parts)
+    if not is_mode(entry):
+        return compact(sheet, entry.answers)
+    if entry.style == "pick":
+        name = (card_info(entry.card or "") or {}).get("name") or entry.card or "a card"
+        return f"[pick one] chose {name}"
+    said = next((a for a in entry.answers or [] if isinstance(a, str) and a), "(nothing)")
+    return f"[quick blot] first thing I saw: {said}"
 
 
 def _one(card: dict, a):
@@ -414,6 +574,25 @@ def available_cards() -> list[dict]:
 
 def card_info(card_id: str) -> dict | None:
     return next((e for e in available_cards() if e["id"] == card_id), None)
+
+
+CARD_LINES = paths.REPO_ROOT / "webapp" / "card-lines.js"
+
+
+def card_lines() -> dict[str, str]:
+    """Tilia's one line per card, as Pick one shows it: the JSON object between the LINES
+    markers in the page's own card-lines.js. Empty if it can't be read."""
+    try:
+        text = CARD_LINES.read_text(encoding="utf-8")
+        raw = json.loads(text.split("/* LINES */", 1)[1].split("/* /LINES */", 1)[0])
+    except (OSError, IndexError, ValueError):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(k, str) and isinstance(v, str)} \
+        if isinstance(raw, dict) else {}
+
+
+def card_line(card_id: str) -> str | None:
+    return card_lines().get(card_id)
 
 
 def card_ids(card: str | None) -> list[str]:

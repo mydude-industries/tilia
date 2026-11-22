@@ -23,7 +23,8 @@ class UI:
         p = self.io.print
         self.io.clear()
         p("")
-        p(self._c("1", f"  Step {step} of {total} · {title}") + self._c("2", f" · about {minutes} min"))
+        head = f"  Step {step} of {total} · {title}" if step else f"  {title}"
+        p(self._c("1", head) + self._c("2", f" · about {minutes} min"))
         p(self._c("2", "  " + _RULE))
         p("")
         for line in lines:

@@ -2,10 +2,11 @@
 # Tilia setup. Everything this script does, in order:
 #   1. If `uv` (the tool that installs Python for this folder) is missing, it asks you,
 #      then installs it with uv's official installer from astral.sh.
-#   2. `uv sync`: Python 3.12 and Tilia's one dependency, inside this folder's .venv.
+#   2. `uv sync`: Python 3.12 and Tilia's two dependencies (phonenumbers and cryptography), inside this folder's .venv.
 #   3. Installs the git hook that refuses commits containing personal data.
 #   4. Starts the guided walkthrough (tilia/setup_wizard.py). Run ./setup again to resume.
 #      ./setup texts | style | model | bot | all  re-runs part of it after it's finished.
+#      ./setup relay  connects the candle relay (optional).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
