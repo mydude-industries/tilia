@@ -205,6 +205,10 @@ window.CandleSmoke = (function () {
     var c = fit();
     var ty = Math.max(80, c.tip[1] * 0.5);
     var fs = fitSerif(String(line), c.W - 40, 25), gap = fs.px * 1.3;
+    // a line that wraps must still clear the flame: lift the block until its last row sits
+    // above the flame's tip, never above the top of the room
+    var low = ty + (fs.lines.length - 1) * gap / 2 + fs.px * 0.6, clear = c.tip[1] - C0().FLAME_H - 14;
+    if (low > clear) ty = Math.max(fs.px + 8 + (fs.lines.length - 1) * gap / 2, ty - (low - clear));
     var L = fs.lines.map(function (ln, k) {
       return { text: ln, font: fs.font, color: "#ece7da", y: ty - (fs.lines.length - 1) * gap / 2 + k * gap };
     });

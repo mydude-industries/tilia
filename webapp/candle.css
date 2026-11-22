@@ -55,7 +55,10 @@
 
   /* ---- words */
   .head, .say, .quiet, .meter, .tap, .follow, .note { position: relative; z-index: 1; }
-  .head { text-align: center; padding: 8px 0 0; transition: opacity var(--warm), transform var(--warm); }
+  /* one height in every state, words sitting low by the candle: so the candle never moves
+     when the invitation gives way to their intention */
+  .head { text-align: center; padding: 8px 0 0; transition: opacity var(--warm), transform var(--warm);
+    min-height: 122px; display: flex; flex-direction: column; justify-content: flex-end; }
   .kicker { font: italic 400 17px/1.45 var(--serif); letter-spacing: .01em; color: #d4b779;
     max-width: 26ch; margin: 0 auto 6px; text-wrap: balance; }
   h1 { font-weight: 400; font-style: italic; font-size: 21px; line-height: 1.3; letter-spacing: .005em;
@@ -67,7 +70,8 @@
   /* lit: the words step back from the flame; out: they leave the room for the smoke */
   .lit .head { opacity: .55; }
   /* their words leave the head's place to become the smoke that lights the wick */
-  .rising .head { opacity: 0; transition: opacity .5s ease-out; }
+  .rising .head { opacity: 0; transition: opacity .18s ease-out; }
+  .waiting .head { opacity: .18; transition: opacity 1.2s ease-out; }
   .rising #fx { display: block; }
   .out .head { opacity: 0; transform: translateY(-8px); pointer-events: none;
     transition: opacity 1.2s ease-out, transform 1.6s ease-out; }
@@ -103,6 +107,10 @@
     caret-color: rgb(180, 140, 60); outline: none; -webkit-appearance: none; appearance: none; border-radius: 12px; }
   .ask-field::placeholder { color: var(--muted); opacity: .8; font-style: italic; }
   .ask .tap { margin-top: 12px; }
+  .ask.leaving { opacity: 0; pointer-events: none; transition: opacity .35s ease-out; }
+  /* what the lit candle brings arrives softly instead of popping in */
+  @keyframes appear { from { opacity: 0; transform: translateY(6px); } }
+  .lit #say, .lit #mic, .lit #meter { animation: appear .9s cubic-bezier(.2, .7, .2, 1) both; }
   /* the call to set it: big, warm, breathing slowly like the flame */
   .ask-title { display: block; text-align: center; font: italic 400 31px/1.2 var(--serif); color: #f6ecd6;
     margin: 0 0 18px; letter-spacing: .005em;
@@ -115,7 +123,8 @@
   [hidden] { display: none !important; }
   .note { color: #6b675e; font: 11.5px/1.5 var(--sans); text-align: center; max-width: 34ch; margin: 40px auto 0;
     transition: opacity var(--warm); }
-  .out .note { opacity: .6; transition: opacity var(--cool); }
+  /* the mic note means nothing once it's out: it leaves before the space around it changes */
+  .out .note { opacity: 0; pointer-events: none; transition: opacity .25s ease-out; }
 
   /* ---- the smoke canvas and the screen-reader line */
   #fx { position: absolute; left: 0; top: 0; z-index: 1; width: 100%; pointer-events: none; display: none; }
@@ -211,6 +220,6 @@
   @media (prefers-reduced-motion: reduce) {
     .glow:before, .halo:before { animation: none; }
     .head, .candle, .out .head, .out .candle { transition-duration: .01s; }
-    .ask-title { animation: none; }
+    .ask-title, .lit #say, .lit #mic, .lit #meter { animation: none; }
     .out .head, .out .candle { transform: none; }
   }
