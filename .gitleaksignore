@@ -1,0 +1,3 @@
+# Test-only values: a throwaway key the seal tests' fixtures were sealed with, and a fake relay secret.
+470caa14e7a0192f953b57f5bb7b3ab09a6d8278:tests/fixtures/relay/test-private-key.pem:private-key:1
+470caa14e7a0192f953b57f5bb7b3ab09a6d8278:tests/test_relay_client.py:generic-api-key:14
