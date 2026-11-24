@@ -1674,3 +1674,50 @@ def test_again_reoffers_a_lit_candle_with_relay(store):
     say(store, fake(coach_json("Here it is again.", worksheet={"type": "again"})),
         c=cfg(**RELAYED))
     assert "mac=sam-mac-01" in url_of(box(store)[-1])  # the coach passes its cfg
+
+
+# ---- variety: recent cards sit out --------------------------------------------------
+
+def _small_deck(monkeypatch, tmp_path, ids):
+    monkeypatch.setattr(entries, "DECK_DIR", tmp_path)
+    man = [{"id": i, "name": i, "number": "", "file": f"{i}.webp", "scene": "", "symbols": []}
+           for i in (*ids, "card-back")]
+    (tmp_path / "manifest.json").write_text(json.dumps(man))
+    for e in man:
+        (tmp_path / e["file"]).write_bytes(b"RIFF")
+
+
+def test_draw_skips_avoided_cards(monkeypatch, tmp_path):
+    import random
+    _small_deck(monkeypatch, tmp_path, "abcde")
+    rng = random.Random(5)
+    for _ in range(200):
+        assert worksheets.draw(rng, avoid={"a", "b", "c"})["id"] in {"d", "e"}
+        ids = {c["id"] for c in worksheets.draw_many(2, rng, avoid={"a", "b", "c"})}
+        assert ids == {"d", "e"}
+
+
+def test_draw_falls_back_to_whole_deck_when_avoiding_too_much(monkeypatch, tmp_path):
+    import random
+    _small_deck(monkeypatch, tmp_path, "abc")
+    rng = random.Random(1)
+    assert worksheets.draw(rng, avoid={"a", "b", "c"})["id"] in {"a", "b", "c"}
+    assert len(worksheets.draw_many(3, rng, avoid={"a"})) == 3  # never short a spread
+
+
+def test_recent_cards_are_the_last_drawn(store):
+    for i, card in enumerate(["00-the-fool", "wands-06-six.cups-03-three", "13-death"]):
+        store.add_entry("tarot" if "." not in card else "spread_three", f"tok{i}", "ask",
+                        card=card)
+    assert worksheets.recent_cards(store) == {"00-the-fool", "wands-06-six", "cups-03-three",
+                                              "13-death"}
+    assert worksheets.recent_cards(store, n=2) == {"13-death", "cups-03-three"}
+
+
+def test_a_new_reading_avoids_recent_cards(store, monkeypatch, tmp_path):
+    _small_deck(monkeypatch, tmp_path, "abcd")
+    for i, c in enumerate("abc"):
+        store.add_entry("tarot", f"old{i}", "ask", card=c)
+    monkeypatch.setattr(worksheets, "seal", lambda *a, **k: None)
+    assert worksheets.prepare(store, cfg(), NOW, "tarot") is not None
+    assert store.entries(types=("tarot",))[-1].card == "d"  # the only card not drawn lately

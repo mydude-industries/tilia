@@ -61,16 +61,38 @@ def personalize(cfg, sheet: dict, focus: str, run=subprocess.run) -> dict | None
 
 # ---- tarot: the draw and the sealed read ------------------------------------------
 
-def draw(rng=_RNG) -> dict | None:
-    """One card from the deck, uniformly, upright only (never the back). None: no deck."""
+RECENT_CARDS = 15  # cards from recent readings sit out of the next deal (about a fifth of the deck)
+
+
+def _deck(avoid=(), need: int = 1) -> list[dict]:
+    """The deck minus `avoid`, unless that leaves too few to deal `need`: then the whole deck."""
     cards = entries.available_cards()
+    fresh = [c for c in cards if c["id"] not in avoid]
+    return fresh if len(fresh) >= need else cards
+
+
+def draw(rng=_RNG, avoid=()) -> dict | None:
+    """One card, uniformly from the deck minus `avoid` (recent cards), upright only (never
+    the back). None: no deck."""
+    cards = _deck(avoid)
     return rng.choice(cards) if cards else None
 
 
-def draw_many(n: int, rng=_RNG) -> list[dict] | None:
-    """n distinct cards from the deck, upright only (never the back). None: too few cards."""
-    cards = entries.available_cards()
+def draw_many(n: int, rng=_RNG, avoid=()) -> list[dict] | None:
+    """n distinct cards from the deck minus `avoid`, upright only (never the back). A spread is
+    never dealt short: if avoiding leaves too few, the whole deck. None: too few cards."""
+    cards = _deck(avoid, n)
     return rng.sample(cards, n) if n <= len(cards) else None
+
+
+def recent_cards(store, n: int = RECENT_CARDS) -> set[str]:
+    """The last `n` card ids dealt, newest first, across single cards and spreads."""
+    out: list[str] = []
+    for e in reversed(store.entries(types=entries.TAROT_TYPES)):
+        out.extend(reversed(entries.card_ids(e.card)))
+        if len(out) >= n:
+            break
+    return set(out[:n])
 
 
 def _card_text(info: dict) -> str:
@@ -183,22 +205,23 @@ def seal(store, cfg, now, entry, run=subprocess.run, share=False) -> None:
         store.set_wording(entry.id, entries.clean_wording(sheet, wording, card_options=True))
 
 
-def _draw_for(type: str, card: str | None = None) -> tuple[str, list[dict] | None]:
+def _draw_for(type: str, card: str | None = None, avoid=()) -> tuple[str, list[dict] | None]:
     """The type that can really be dealt, and its cards: a spread the deck can't fill
     becomes a single card, and a single card with no deck becomes a blot. `card` (ids
     joined with `.`) deals those exact cards instead, when the deck still has them all and
-    they fill this type: a gift that falls back to a button keeps the card its line named."""
+    they fill this type: a gift that falls back to a button keeps the card its line named.
+    Fresh cards skip `avoid` (the recent ones) when the deck allows."""
     if card and type in entries.TAROT_TYPES:
         infos = [entries.card_info(i) for i in entries.card_ids(card)]
         if all(infos) and len(infos) == len(entries.SPREADS.get(type, [None])):
             return type, infos
     if type in entries.SPREADS:
-        cards = draw_many(len(entries.SPREADS[type]))
+        cards = draw_many(len(entries.SPREADS[type]), avoid=avoid)
         if cards is not None:
             return type, cards
         type = "tarot"
     if type == "tarot":
-        card = draw()
+        card = draw(avoid=avoid)
         return ("tarot", [card]) if card else ("blot", None)
     return type, None
 
@@ -214,7 +237,7 @@ def prepare(store, cfg, now, type: str, *, focus=None, source="ask", assignment_
     deals three face down from it and they choose, so there is no read to seal. `card` deals
     those cards instead of fresh ones (see _draw_for)."""
     pick = style == "pick" and type == "tarot"
-    type, cards = (type, None) if pick else _draw_for(type, card)
+    type, cards = (type, None) if pick else _draw_for(type, card, recent_cards(store))
     try:
         sheet = entries.load_sheet(type)
     except ValueError:

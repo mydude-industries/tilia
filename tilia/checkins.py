@@ -468,7 +468,7 @@ def _offer_cand(store, cfg, now) -> Candidate | None:
     card = ""
     if style in ("gift", "draw"):  # drawn now, so the line can fit the card
         n = len(entries.SPREADS.get(kind, [None]))
-        card = ".".join(c["id"] for c in rng.sample(entries.available_cards(), n))
+        card = ".".join(c["id"] for c in worksheets.draw_many(n, rng, worksheets.recent_cards(store)))
     ctx = _offer_context(style, kind, card)
     if ctx is None:
         return None

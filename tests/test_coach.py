@@ -576,3 +576,10 @@ def test_coach_md_candle_focus_and_again():
     candle = flat.split("- `candle`:", 1)[1].split("- `", 1)[0]
     assert "Leave `focus` null" in candle and "Put the hard thing" not in candle
     assert "a candle they lit in the last few hours" in flat
+
+
+def test_coach_prompt_asked_reading_deals_new_cards():
+    """Asked for a reading, Tilia deals a new one; "again" was re-sending one open card."""
+    text = (paths.REPO_ROOT / "prompts" / "coach.md").read_text(encoding="utf-8")
+    assert "When they ask for a card, a reading or a spread, deal a new one" in text
+    assert 'use "again" only when they ask to see the same one back' in text
